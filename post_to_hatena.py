@@ -12,18 +12,14 @@ def post_article(filepath):
     with open(filepath, 'r', encoding='utf-8') as f:
         content = f.read()
 
-    # タイトルをfrontmatterから取得
     title_match = re.search(r'^title:\s*(.+)$', content, re.MULTILINE)
     title = title_match.group(1).strip() if title_match else '無題'
 
-    # カテゴリを取得
     cat_match = re.search(r'^category:\s*(.+)$', content, re.MULTILINE)
     category = cat_match.group(1).strip() if cat_match else 'メンタル'
 
-    # frontmatterを除いた本文を取得
     body = re.sub(r'^---\n.*?\n---\n', '', content, flags=re.DOTALL).strip()
 
-    # XML特殊文字をエスケープ
     def esc(s):
         return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
 
@@ -51,9 +47,9 @@ def post_article(filepath):
 
     try:
         with urllib.request.urlopen(req) as resp:
-            print(f'✅ 投稿成功: {title} (status={resp.status})')
+            print(f'投稿成功: {title} (status={resp.status})')
     except Exception as e:
-        print(f'❌ 投稿失敗: {title} - {e}')
+        print(f'投稿失敗: {title} - {e}')
 
 if __name__ == '__main__':
     for filepath in sys.argv[1:]:
