@@ -693,8 +693,8 @@ class GameScene extends Phaser.Scene {
       snd('collect');
       d._pulseTween?.stop();
       d.destroy();
-      this.dropItems=this.dropItems.filter(x=>x!==d);
     });
+    this.dropItems=this.dropItems.filter(d=>!toRm.includes(d));
     return true;
   }
 
@@ -776,7 +776,7 @@ class GameScene extends Phaser.Scene {
     for(const e of this.enemies){
       if(!e.alive) continue;
       if(Math.hypot(e.px-px,e.py-py)<radius){
-        const dmg=Math.round(this.patk*1.5*(this.burstMult||1));
+        const dmg=Math.max(1,Math.round(this.patk*1.5*(this.burstMult||1)*100/(100+(e.d.def||0))));
         e.hit(dmg); e.sync();
         floatTxt(this,e.px,e.py-25,`💥-${dmg}`,'#cc44ff');
         hitCount++;
@@ -1007,6 +1007,7 @@ class GameScene extends Phaser.Scene {
     this.php=Math.round(this.phm*0.3);
     this.pl.setPosition(CX,CY);
     this.invincibleUntil=(this.time?.now||0)+5000;
+    this.combo=0; this.tCombo=0;
     floatTxt(this,CX,CY-65,'💀 気絶！拠点へ帰還...','#ff8800');
     shake(this,0.016,320);
     snd('die');
