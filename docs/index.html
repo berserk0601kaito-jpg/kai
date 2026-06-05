@@ -183,12 +183,15 @@ function shadow(scene, x, y, w, h) {
   return g;
 }
 
+let _floatTxtActive=0;
 function floatTxt(scene, x, y, msg, col='#ffff00') {
+  if(_floatTxtActive>=28) return;
   const cam=scene.cameras?.main;
   const sx=cam?x-cam.scrollX:x, sy=cam?y-cam.scrollY:y;
   const t = scene.add.text(sx, sy, msg, {fontSize:'14px',fill:col,stroke:'#000',strokeThickness:3})
     .setOrigin(0.5).setScrollFactor(0).setDepth(9999);
-  scene.tweens.add({targets:t, y:sy-46, alpha:0, duration:950, onComplete:()=>t.destroy()});
+  _floatTxtActive++;
+  scene.tweens.add({targets:t, y:sy-46, alpha:0, duration:950, onComplete:()=>{t.destroy();_floatTxtActive--;}});
 }
 
 function shake(scene, i=0.005, d=130) {
@@ -1600,7 +1603,7 @@ class UIScene extends Phaser.Scene {
       } else this.baseSub.setText('MAX');
     }
 
-    this._drawMinimap();
+    if(!(++this._mmTick%4)) this._drawMinimap();
     if(this.showStats) this._refreshStats();
   }
 
