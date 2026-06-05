@@ -486,7 +486,9 @@ class GameScene extends Phaser.Scene {
     this.cameras.main.setViewport(0,HUD_H,GW,GH-HUD_H-PANEL_H);
 
     this.tAtk=0; this.tCol=0; this.tRgn=0; this.tSave=0; this.tAreaChk=0;
-    this.tPassive=0; this.tWave=0; this.tDay=0; this._lastMilestone=0;
+    this.tPassive=0; this.tWave=0; this.tDay=0;
+    const _mth=[10,25,50,100,200,500,1000];
+    this._lastMilestone=_mth.filter(t=>STATE.kills>=t).reduce((m,t)=>Math.max(m,t),0);
     this.curArea=1; this.moveTarget=null;
     this.dropItems=[];
     this.combo=0; this.tCombo=0; this.comboLabel=null;
@@ -1051,7 +1053,7 @@ class GameScene extends Phaser.Scene {
     this.tWave=time;
     STATE.wave++;
     const w=STATE.wave;
-    const mult=Math.pow(1.15,w);
+    const mult=Math.min(Math.pow(1.15,w),50000);
     const wCol=[0xff4400,0xaa00ff,0x00aaff,0xffaa00,0xff0088][(w-1)%5];
     const wName=['炎の魔物','紫の悪魔','水の精','砂漠の王','闇の使者'][(w-1)%5];
     const waveDef={...EDEFS.wave,
