@@ -461,7 +461,7 @@ class GameScene extends Phaser.Scene {
     this.curArea=1; this.moveTarget=null;
     this.dropItems=[];
     this.combo=0; this.tCombo=0; this.comboLabel=null;
-    this.burstCd=0;
+    this.burstCd=0; this.invincibleUntil=0;
 
     // Space key for magic burst
     this.spaceKey=this.input.keyboard.addKey('SPACE');
