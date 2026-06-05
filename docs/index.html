@@ -366,6 +366,7 @@ class TitleScene extends Phaser.Scene {
 
     if(hasSave()){
       this._btn(GW/2,406,230,54,'📂  続きから',0x0a1a30,0x4499ff,()=>{
+        stopBGM();
         load();
         this.scene.start('GameScene');
         this.scene.launch('UIScene');
@@ -1388,6 +1389,7 @@ class UIScene extends Phaser.Scene {
     const isMax=newLv>=cr.max;
     lvTx.setText(isMax?'✅ MAX':`Lv${newLv}/${cr.max}`);
     bg.setFillStyle(isMax?0x111111:0x001a00,0.95).setStrokeStyle(2,isMax?0x555555:0x44aa44);
+    lbl.setAlpha(isMax?0.4:1); sub.setAlpha(isMax?0.4:1);
     const gs=this.scene.get('GameScene');
     if(gs) gs._applyCraftBonuses();
     snd('upgrade');
