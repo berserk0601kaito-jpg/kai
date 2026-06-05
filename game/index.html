@@ -611,13 +611,14 @@ class GameScene extends Phaser.Scene {
   // ── GOLD / DROPS ──
   spawnGold(x,y,amount) {
     const n=Math.min(Math.ceil(amount/3),7);
+    const perCoin=Math.ceil(amount/n);
     for(let i=0;i<n;i++){
       const ang=(i/n)*Math.PI*2+Math.random()*0.5;
       const r=16+Math.random()*14;
       const cx=x+Math.cos(ang)*r, cy=y+Math.sin(ang)*r;
       const coin=this.add.circle(cx,cy,5.5,0xffd700);
       coin.setDepth(500).setStrokeStyle(1.2,0xaa8800);
-      coin.goldAmt=amount;
+      coin.goldAmt=perCoin;
       coin._spawnTime=this.time.now;
       this.coins.push(coin);
       this.tweens.add({targets:coin,y:cy-24,duration:270,ease:'Quad.Out',
