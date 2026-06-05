@@ -408,7 +408,7 @@ class TitleScene extends Phaser.Scene {
       ['採集',    '木・岩に近づくと自動で採集（木材・石）'],
       ['戦闘',    '敵に近づくと自動攻撃。倒すとゴールド・素材ドロップ'],
       ['強化',    '下のパネルで武器・防具・拠点をアップグレード'],
-      ['エリア解放','拠点Lv2→深い森  武器Lv3→山の麓  防具Lv4→魔境'],
+      ['エリア解放','拠点Lv2→深い森  武器Lv3→山の麓  防具Lv3→魔境'],
       ['特殊能力', '✨BURST（Space / ボタン）で範囲攻撃\n[C] で特殊クラフト強化'],
       ['その他',  '[TAB] ステータス  [ESC] ポーズ\n30秒ごと自動セーブ'],
     ];
@@ -558,7 +558,7 @@ class GameScene extends Phaser.Scene {
     const locks=[
       {areaId:2,x:CX+940, y:CY, text:'🔒 拠点Lv2 で解放'},
       {areaId:3,x:CX+1740,y:CY, text:'🔒 鉄の剣（武器Lv3）で解放'},
-      {areaId:4,x:CX+2540,y:CY, text:'🔒 銀の鎧（防具Lv4）で解放'},
+      {areaId:4,x:CX+2540,y:CY, text:'🔒 銀の鎧（防具Lv3）で解放'},
     ];
     for(const lk of locks){
       const bg=this.add.rectangle(lk.x,lk.y-28,190,34,0x000000,0.75).setDepth(12);
