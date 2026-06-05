@@ -15,6 +15,39 @@ body { background: #060e04; display: flex; align-items: center; justify-content:
 <script>
 'use strict';
 // ═══════════════════════════════════════════
+// WEB AUDIO SOUND ENGINE
+// ═══════════════════════════════════════════
+let _ac = null;
+function ac() {
+  if (!_ac) { try { _ac = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){} }
+  return _ac;
+}
+function snd(type) {
+  const ctx = ac(); if (!ctx) return;
+  const play = (freq, endFreq, dur, vol, wave='sine', delay=0) => {
+    const o=ctx.createOscillator(), g=ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type=wave;
+    o.frequency.setValueAtTime(freq, ctx.currentTime+delay);
+    if (endFreq) o.frequency.exponentialRampToValueAtTime(endFreq, ctx.currentTime+delay+dur);
+    g.gain.setValueAtTime(0, ctx.currentTime+delay);
+    g.gain.linearRampToValueAtTime(vol, ctx.currentTime+delay+0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+delay+dur);
+    o.start(ctx.currentTime+delay);
+    o.stop(ctx.currentTime+delay+dur+0.05);
+  };
+  if (type==='atk')     play(220,60,0.10,0.08,'sawtooth');
+  if (type==='collect') play(440,880,0.12,0.07,'sine');
+  if (type==='coin')    play(880,1320,0.09,0.06,'sine');
+  if (type==='hurt')    play(160,80,0.16,0.07,'square');
+  if (type==='die')     { play(300,60,0.3,0.1,'sawtooth'); play(200,40,0.3,0.06,'square',0.05); }
+  if (type==='upgrade') [261,329,392,523].forEach((f,i)=>play(f,f*1.5,0.14,0.12,'sine',i*0.065));
+  if (type==='unlock')  [523,659,784,1046,1318].forEach((f,i)=>play(f,f*1.05,0.2,0.15,'sine',i*0.08));
+}
+// Unlock audio on first tap (browser autoplay policy)
+document.addEventListener('pointerdown', ()=>{ try { ac()?.resume(); } catch(e){} }, {once:true});
+
+// ═══════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════
 const GW = 800, GH = 600, WW = 4000, WH = 4000;
@@ -46,10 +79,10 @@ const ARMOR_DATA = [
 ];
 
 const BASE_DATA = [
-  { name:'初期拠点', bonus:1.0, regen:1.0, goldCost:0,   woodCost:0   },
-  { name:'Lv2 拠点', bonus:1.2, regen:1.6, goldCost:100, woodCost:100 },
-  { name:'Lv3 拠点', bonus:1.5, regen:2.2, goldCost:100, woodCost:300 },
-  { name:'Lv4 拠点', bonus:2.0, regen:3.5, goldCost:200, woodCost:500 },
+  { name:'初期拠点', bonus:1.0, regen:1.0, passive:0,  goldCost:0,   woodCost:0   },
+  { name:'Lv2 拠点', bonus:1.2, regen:1.6, passive:0,  goldCost:100, woodCost:100 },
+  { name:'Lv3 拠点', bonus:1.5, regen:2.2, passive:3,  goldCost:100, woodCost:300 },
+  { name:'Lv4 拠点', bonus:2.0, regen:3.5, passive:8,  goldCost:200, woodCost:500 },
 ];
 
 const EDEFS = {
@@ -341,9 +374,15 @@ class GameScene extends Phaser.Scene {
     this.cameras.main.setViewport(0,HUD_H,GW,GH-HUD_H-PANEL_H);
 
     this.tAtk=0; this.tCol=0; this.tRgn=0; this.tSave=0; this.tAreaChk=0;
+    this.tPassive=0; this.tMilestone=0;
     this.curArea=1;
     this.lockMkrs=[];
     this._makeLockMarkers();
+
+    // Attack range indicator (subtle pulsing circle)
+    this.rangeCircle = this.add.graphics();
+    this.rangeCircle.setDepth(8);
+    this._updateRangeCircle();
   }
 
   // ── GROUND ──
@@ -515,6 +554,16 @@ class GameScene extends Phaser.Scene {
     this.pHbr.setFillStyle(hcol);
   }
 
+  // ── RANGE CIRCLE ──
+  _updateRangeCircle() {
+    const g=this.rangeCircle;
+    g.clear();
+    if(!this.pl) return;
+    const px=this.pl.x, py=this.pl.y;
+    g.lineStyle(1.5,0x44ff88,0.18);
+    g.strokeCircle(px,py,this.prng);
+  }
+
   // ── AUTO ATTACK ──
   _attack(time) {
     if(time-this.tAtk<this.pspd) return;
@@ -532,6 +581,14 @@ class GameScene extends Phaser.Scene {
     best.sync();
     floatTxt(this,best.px,best.py-22,`-${dmg}`,'#ff5555');
     this._particles(best.px,best.py,0xff4400,5);
+    snd('atk');
+
+    // Range flash
+    const flash=this.add.graphics();
+    flash.lineStyle(2,0xff9900,0.8);
+    flash.strokeCircle(px,py,this.prng);
+    flash.setDepth(8);
+    this.tweens.add({targets:flash,alpha:0,duration:180,onComplete:()=>flash.destroy()});
 
     const g=this.add.graphics();
     g.lineStyle(2,0xff9900,0.7);
@@ -553,6 +610,7 @@ class GameScene extends Phaser.Scene {
       const total=toRm.reduce((s,c)=>s+(c.goldAmt||0),0);
       toRm.forEach(c=>{c.destroy();this.coins.splice(this.coins.indexOf(c),1);});
       floatTxt(this,px,py-38,`+${total}G`,'#ffd700');
+      snd('coin');
       this.tCol=time; return;
     }
 
@@ -563,6 +621,7 @@ class GameScene extends Phaser.Scene {
         const got=Math.max(1,Math.round(bonus));
         STATE.wood+=got; t.wood-=got;
         floatTxt(this,t.x,t.y-32,`🌲 +${got}`,'#88ff88');
+        snd('collect');
         if(t.wood<=0){t.setDepleted(true);this.respawnQ.push({obj:t,at:time+14000});}
         this.tCol=time; return;
       }
@@ -574,6 +633,7 @@ class GameScene extends Phaser.Scene {
       if(Math.hypot(r.x-px,r.y-py)<range){
         STATE.stone=(STATE.stone||0)+1; r.stone--;
         floatTxt(this,r.x,r.y-32,'🪨 +1','#bbbbff');
+        snd('collect');
         if(r.stone<=0) r.setDepleted(true);
         this.tCol=time; return;
       }
@@ -595,6 +655,7 @@ class GameScene extends Phaser.Scene {
           this.php=Math.max(0,this.php-dmg);
           floatTxt(this,px,py-32,`-${dmg}`,'#ff2200');
           shake(this,0.004+dmg*0.00015,120);
+          snd('hurt');
           if(this.php<=0) this._dead();
         }
       } else {
@@ -674,13 +735,13 @@ class GameScene extends Phaser.Scene {
   unlockArea(id) {
     if(areaUnlocked(id)) return;
     STATE.areas.push(id);
-    // spawn enemies
     for(const [type,def] of Object.entries(EDEFS)){
       if(def.area===id) for(let i=0;i<def.max;i++) this._spawn(type);
     }
     const name=AREA_DATA[id-1].name;
     floatTxt(this,this.pl.x,this.pl.y-70,`🗺 エリア${id}「${name}」解放！`,'#44ffff');
     shake(this,0.009,280);
+    snd('unlock');
   }
 
   // ── PLAYER DEAD ──
@@ -689,6 +750,7 @@ class GameScene extends Phaser.Scene {
     this.pl.setPosition(CX,CY);
     floatTxt(this,CX,CY-65,'💀 気絶！拠点へ帰還...','#ff8800');
     shake(this,0.016,320);
+    snd('die');
   }
 
   // ── APPLY UPGRADES ──
@@ -700,6 +762,32 @@ class GameScene extends Phaser.Scene {
     const prev=this.phm, d=ARMOR_DATA[STATE.armorLv];
     this.phm=d.maxHp; this.pdef=d.def;
     this.php=Math.min(this.php+(d.maxHp-prev),d.maxHp);
+  }
+
+  // ── PASSIVE INCOME ──
+  _passive(time) {
+    const rate=BASE_DATA[STATE.baseLv].passive;
+    if(rate<=0) return;
+    if(time-this.tPassive>5000){
+      this.tPassive=time;
+      STATE.gold+=rate;
+      floatTxt(this,this.pl.x+Phaser.Math.Between(-30,30),this.pl.y-50,`+${rate}G 🏠`,'#ffd700');
+    }
+  }
+
+  // ── KILL MILESTONES ──
+  _milestones() {
+    const thresholds=[10,25,50,100,200,500,1000];
+    const prev=this._lastMilestone||0;
+    for(const th of thresholds){
+      if(STATE.kills>=th&&prev<th){
+        this._lastMilestone=th;
+        const bonus=th*5;
+        STATE.gold+=bonus;
+        floatTxt(this,this.pl.x,this.pl.y-80,`🏆 ${th}体撃破！ +${bonus}G`,'#ffdd00');
+        snd('upgrade');
+      }
+    }
   }
 
   // ── AUTO SAVE ──
@@ -717,6 +805,9 @@ class GameScene extends Phaser.Scene {
     this._respawns(time);
     this._regen(time);
     this._areaCheck(time);
+    this._passive(time);
+    this._milestones();
+    this._updateRangeCircle();
     this._autoSave(time);
   }
 }
@@ -748,7 +839,8 @@ class UIScene extends Phaser.Scene {
     this.wdTxt  = this.add.text(310,5, '',{fontSize:'13px',fill:'#88ff88',stroke:'#000',strokeThickness:2}).setScrollFactor(0).setDepth(1002);
     this.resTxt = this.add.text(208,29,'',{fontSize:'11px',fill:'#ccccff',stroke:'#000',strokeThickness:2}).setScrollFactor(0).setDepth(1002);
     this.gearTx = this.add.text(208,43,'',{fontSize:'10px',fill:'#ff9944'}).setScrollFactor(0).setDepth(1002);
-    this.staTxt = this.add.text(GW-170,5,'',{fontSize:'11px',fill:'#888888'}).setScrollFactor(0).setDepth(1002);
+    this.staTxt   = this.add.text(GW-170,5,'',{fontSize:'11px',fill:'#888888'}).setScrollFactor(0).setDepth(1002);
+    this.passiveTx= this.add.text(GW-170,22,'',{fontSize:'10px',fill:'#ffd700'}).setScrollFactor(0).setDepth(1002);
 
     // Save button
     const sbg=this.add.rectangle(GW-42,HUD_H-14,64,22,0x1a3a1a,0.92)
@@ -821,6 +913,7 @@ class UIScene extends Phaser.Scene {
     }
 
     this.tweens.add({targets:bg,scaleX:1.08,scaleY:1.08,duration:75,yoyo:true});
+    snd('upgrade');
   }
 
   _err(bg,bx,by) {
@@ -893,6 +986,8 @@ class UIScene extends Phaser.Scene {
     this.resTxt.setText(`🥩${STATE.meat||0}  🫧${STATE.skin||0}  💎${STATE.gem||0}  🪨${STATE.stone||0}`);
     this.gearTx.setText(`⚔${WEAPON_DATA[STATE.weaponLv].name}  🛡${ARMOR_DATA[STATE.armorLv].name}`);
     this.staTxt.setText(`撃破:${STATE.kills}  エリア:${gs.curArea}/4`);
+    const passive=BASE_DATA[STATE.baseLv].passive;
+    this.passiveTx.setText(passive>0?`🏠 +${passive}G/5秒`:'');
 
     const wn=STATE.weaponLv+1;
     this.weaponSub.setText(wn<WEAPON_DATA.length?`${WEAPON_DATA[wn].name} / ${WEAPON_DATA[wn].cost}G`:'MAX');
