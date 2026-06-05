@@ -128,8 +128,8 @@ const ARMOR_DATA = [
 const BASE_DATA = [
   { name:'初期拠点', bonus:1.0, regen:1.0, passive:0, goldCost:0,   woodCost:0   },
   { name:'Lv2 拠点', bonus:1.2, regen:1.6, passive:0, goldCost:80,  woodCost:40  },
-  { name:'Lv3 拠点', bonus:1.5, regen:2.2, passive:4, goldCost:100, woodCost:200 },
-  { name:'Lv4 拠点', bonus:2.0, regen:3.5, passive:10,goldCost:200, woodCost:400 },
+  { name:'Lv3 拠点', bonus:1.5, regen:2.2, passive:4, goldCost:100, woodCost:200, stoneCost:40  },
+  { name:'Lv4 拠点', bonus:2.0, regen:3.5, passive:10,goldCost:200, woodCost:400, stoneCost:80  },
 ];
 
 const EDEFS = {
@@ -1286,8 +1286,8 @@ class UIScene extends Phaser.Scene {
       const n=STATE.baseLv+1;
       if(n>=BASE_DATA.length) return;
       const bd=BASE_DATA[n];
-      if(STATE.gold<bd.goldCost||STATE.wood<bd.woodCost){this._err(bg,bx,by);return;}
-      STATE.gold-=bd.goldCost; STATE.wood-=bd.woodCost; STATE.baseLv=n;
+      if(STATE.gold<bd.goldCost||STATE.wood<bd.woodCost||(STATE.stone||0)<(bd.stoneCost||0)){this._err(bg,bx,by);return;}
+      STATE.gold-=bd.goldCost; STATE.wood-=bd.woodCost; STATE.stone=(STATE.stone||0)-(bd.stoneCost||0); STATE.baseLv=n;
       this.notify(`🏠 拠点強化: ${bd.name}  再生×${bd.regen}`,'#44ff44',2000);
       if(n===1) gs.unlockArea(2);
     }
@@ -1536,7 +1536,7 @@ class UIScene extends Phaser.Scene {
     const bn=STATE.baseLv+1;
     if(bn<BASE_DATA.length){
       const bd=BASE_DATA[bn];
-      this.baseSub.setText(`${bd.name} / ${bd.goldCost}G+木${bd.woodCost}`);
+      this.baseSub.setText(`${bd.name} / ${bd.goldCost}G+木${bd.woodCost}${bd.stoneCost?'+石'+bd.stoneCost:''}`);
     } else this.baseSub.setText('MAX');
 
     this._drawMinimap();
