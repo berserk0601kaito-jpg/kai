@@ -636,7 +636,7 @@ class GameScene extends Phaser.Scene {
       const r=16+Math.random()*14;
       const cx=x+Math.cos(ang)*r, cy=y+Math.sin(ang)*r;
       const coin=this.add.circle(cx,cy,5.5,0xffd700);
-      coin.setDepth(500).setStrokeStyle(1.2,0xaa8800);
+      coin.setDepth(cy+200).setStrokeStyle(1.2,0xaa8800);
       coin.goldAmt=perCoin;
       coin._spawnTime=this.time.now;
       this.coins.push(coin);
@@ -1386,6 +1386,7 @@ class UIScene extends Phaser.Scene {
     this.paused=!this.paused;
     const gs=this.scene.get('GameScene');
     if(this.paused){
+      if(this.showCraft) this._toggleCraft();
       gs?.scene.pause();
       if(this._vjInput){this._vjInput.active=false;this._vjInput.dx=0;this._vjInput.dy=0;}
     } else { gs?.scene.resume(); }
