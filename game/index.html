@@ -437,14 +437,14 @@ class GameScene extends Phaser.Scene {
     this.spaceKey=this.input.keyboard.addKey('SPACE');
 
     // Virtual joystick (mobile)
-    this._vjoy={active:false,cx:0,cy:0,dx:0,dy:0,ptrId:null};
-    this._buildVJoy();
+    // VJoy is managed in UIScene; GameScene reads it via scene reference
     this.lockMkrs=[];
     this._makeLockMarkers();
 
-    // Click-to-move
+    // Click-to-move (exclude VJoy zone: left 35%, and button area)
     this.input.on('pointerdown', ptr => {
       if (ptr.y <= HUD_H || ptr.y >= GH - PANEL_H) return;
+      if (ptr.x < GW * 0.35) return; // VJoy zone on left
       const cam = this.cameras.main;
       const wx = cam.scrollX + (ptr.x - cam.x);
       const wy = cam.scrollY + (ptr.y - cam.y);
@@ -659,7 +659,7 @@ class GameScene extends Phaser.Scene {
     const k=this.wasd, c=this.cursors;
     const keyDown=k.A.isDown||k.D.isDown||k.W.isDown||k.S.isDown||c.left.isDown||c.right.isDown||c.up.isDown||c.down.isDown;
 
-    const vj=this._vjoy;
+    const vj=this.scene.get('UIScene')?._vjInput;
     if (keyDown) {
       this.moveTarget = null;
       if(k.A.isDown||c.left.isDown)  vx-=spd;
@@ -667,7 +667,7 @@ class GameScene extends Phaser.Scene {
       if(k.W.isDown||c.up.isDown)    vy-=spd;
       if(k.S.isDown||c.down.isDown)  vy+=spd;
       if(vx&&vy){vx*=0.707;vy*=0.707;}
-    } else if (vj.active&&(vj.dx||vj.dy)) {
+    } else if (vj?.active&&(vj.dx||vj.dy)) {
       this.moveTarget=null;
       vx=vj.dx*spd; vy=vj.dy*spd;
     } else if (this.moveTarget) {
@@ -688,45 +688,6 @@ class GameScene extends Phaser.Scene {
     this.pHbr.setPosition(x-15,y-22).setSize(30*ratio,5).setDepth(y+102);
     const hcol=ratio>0.5?0x22ff66:ratio>0.25?0xffcc00:0xff3300;
     this.pHbr.setFillStyle(hcol);
-  }
-
-  // ── VIRTUAL JOYSTICK ──
-  _buildVJoy() {
-    // Only show on touch devices
-    const isTouchDevice=('ontouchstart' in window)||navigator.maxTouchPoints>0;
-    if(!isTouchDevice) return;
-
-    const jx=90,jy=GH-90+HUD_H; // world-irrelevant, UI positioned
-    this.vjBase=this.add.circle(jx,jy,48,0x000000,0.35).setScrollFactor(0).setDepth(5000).setStrokeStyle(2,0x44ff44,0.5);
-    this.vjNub =this.add.circle(jx,jy,22,0x44ff44,0.55).setScrollFactor(0).setDepth(5001);
-
-    this.input.on('pointerdown',(ptr)=>{
-      if(ptr.y>GH-140+HUD_H&&ptr.x<180){
-        const vj=this._vjoy;
-        vj.active=true; vj.ptrId=ptr.id;
-        vj.cx=ptr.x; vj.cy=ptr.y;
-        this.vjBase.setPosition(ptr.x,ptr.y);
-        this.vjNub.setPosition(ptr.x,ptr.y);
-        this.moveTarget=null;
-      }
-    },'vjoy_down',this,true); // prepend
-
-    this.input.on('pointermove',(ptr)=>{
-      const vj=this._vjoy;
-      if(!vj.active||ptr.id!==vj.ptrId) return;
-      const dx=ptr.x-vj.cx, dy=ptr.y-vj.cy;
-      const dist=Math.hypot(dx,dy), maxR=44;
-      const clamp=Math.min(dist,maxR)/maxR;
-      const nx=dx/Math.max(dist,1)*clamp*maxR, ny=dy/Math.max(dist,1)*clamp*maxR;
-      vj.dx=nx/maxR; vj.dy=ny/maxR;
-      this.vjNub.setPosition(vj.cx+nx,vj.cy+ny);
-    });
-
-    this.input.on('pointerup',(ptr)=>{
-      const vj=this._vjoy;
-      if(ptr.id===vj.ptrId){ vj.active=false; vj.dx=0; vj.dy=0;
-        this.vjNub.setPosition(this.vjBase.x,this.vjBase.y); }
-    });
   }
 
   // ── MAGIC BURST ──
@@ -1124,10 +1085,73 @@ class UIScene extends Phaser.Scene {
     this._minimap();
     this._statsPanel();
     this._pauseOverlay();
+    this._mobileControls();
     this.showStats=false; this.paused=false; this.showCraft=false;
-    this.input.keyboard.on('keydown-TAB',(e)=>{e.preventDefault();this._toggleStats();});
-    this.input.keyboard.on('keydown-ESC',()=>this._togglePause());
-    this.input.keyboard.on('keydown-C',  ()=>this._toggleCraft());
+    this.input.keyboard?.on('keydown-TAB',(e)=>{e.preventDefault();this._toggleStats();});
+    this.input.keyboard?.on('keydown-ESC',()=>this._togglePause());
+    this.input.keyboard?.on('keydown-C',  ()=>this._toggleCraft());
+  }
+
+  // ── MOBILE CONTROLS ──
+  _mobileControls() {
+    const isTouch=('ontouchstart' in window)||navigator.maxTouchPoints>0;
+    this._vjInput={active:false,cx:0,cy:0,dx:0,dy:0,pid:-1};
+
+    // ── Virtual Joystick ──
+    // Zone: left 35% of screen, between HUD and panel
+    const VJ_ZONE_X=GW*0.35, VJ_ZONE_Y_TOP=HUD_H, VJ_ZONE_Y_BTM=GH-PANEL_H;
+    const R=50;
+    const defX=80, defY=GH-PANEL_H-70;
+    this.vjBase=this.add.circle(defX,defY,R,0x000000,0.3)
+      .setScrollFactor(0).setDepth(5000).setStrokeStyle(2,0x44ff44,0.45)
+      .setVisible(isTouch);
+    this.vjNub=this.add.circle(defX,defY,22,0x44ff44,0.55)
+      .setScrollFactor(0).setDepth(5001).setVisible(isTouch);
+
+    this.input.on('pointerdown',(ptr)=>{
+      const vj=this._vjInput;
+      if(ptr.x<VJ_ZONE_X&&ptr.y>VJ_ZONE_Y_TOP&&ptr.y<VJ_ZONE_Y_BTM&&!vj.active){
+        vj.active=true; vj.pid=ptr.id;
+        vj.cx=ptr.x; vj.cy=ptr.y;
+        this.vjBase.setPosition(ptr.x,ptr.y).setVisible(true);
+        this.vjNub.setPosition(ptr.x,ptr.y);
+        // cancel click-to-move in GameScene
+        const gs=this.scene.get('GameScene'); if(gs) gs.moveTarget=null;
+      }
+    });
+    this.input.on('pointermove',(ptr)=>{
+      const vj=this._vjInput;
+      if(!vj.active||ptr.id!==vj.pid) return;
+      const dx=ptr.x-vj.cx, dy=ptr.y-vj.cy;
+      const dist=Math.hypot(dx,dy)||1;
+      const clamp=Math.min(dist,R);
+      vj.dx=(dx/dist)*(clamp/R);
+      vj.dy=(dy/dist)*(clamp/R);
+      this.vjNub.setPosition(vj.cx+vj.dx*R, vj.cy+vj.dy*R);
+    });
+    this.input.on('pointerup',(ptr)=>{
+      const vj=this._vjInput;
+      if(ptr.id!==vj.pid) return;
+      vj.active=false; vj.dx=0; vj.dy=0;
+      this.vjNub.setPosition(defX,defY);
+      this.vjBase.setPosition(defX,defY);
+    });
+
+    // ── Mobile icon buttons: ⏸ Stats Craft ──
+    if(!isTouch) return;
+    const iconY=HUD_H+22;
+    const icons=[
+      {label:'⏸',x:GW-180,cb:()=>this._togglePause()},
+      {label:'📊',x:GW-148,cb:()=>this._toggleStats()},
+      {label:'⚗',x:GW-116,cb:()=>this._toggleCraft()},
+    ];
+    icons.forEach(({label,x,cb})=>{
+      const bg=this.add.circle(x,iconY,16,0x000000,0.55)
+        .setScrollFactor(0).setDepth(1020).setStrokeStyle(1.5,0x44ff44,0.5).setInteractive({useHandCursor:true});
+      this.add.text(x,iconY,label,{fontSize:'14px'}).setOrigin(0.5)
+        .setScrollFactor(0).setDepth(1021);
+      bg.on('pointerdown',cb);
+    });
   }
 
   _hud() {
@@ -1438,11 +1462,11 @@ class UIScene extends Phaser.Scene {
     // Burst button (bottom-right)
     if(!this._burstBtnBuilt){
       this._burstBtnBuilt=true;
-      this.burstBg=this.add.rectangle(GW-44,GH-PANEL_H-36,72,44,0x1a0028,0.95)
+      this.burstBg=this.add.rectangle(GW/2,GH-PANEL_H-28,88,40,0x1a0028,0.95)
         .setScrollFactor(0).setDepth(1005).setStrokeStyle(2,0xaa44ff).setInteractive({useHandCursor:true});
-      this.burstTx=this.add.text(GW-44,GH-PANEL_H-36,'✨ BURST',{fontSize:'12px',fill:'#cc88ff',stroke:'#000',strokeThickness:2})
+      this.burstTx=this.add.text(GW/2,GH-PANEL_H-32,'✨ BURST',{fontSize:'13px',fill:'#cc88ff',stroke:'#000',strokeThickness:2})
         .setOrigin(0.5).setScrollFactor(0).setDepth(1006);
-      this.burstCdTx=this.add.text(GW-44,GH-PANEL_H-20,'',{fontSize:'9px',fill:'#888888'})
+      this.burstCdTx=this.add.text(GW/2,GH-PANEL_H-16,'',{fontSize:'9px',fill:'#888888'})
         .setOrigin(0.5).setScrollFactor(0).setDepth(1006);
       this.burstBg.on('pointerdown',()=>{
         const gs=this.scene.get('GameScene'); if(gs) gs._burstBtnPressed=true;
@@ -1454,7 +1478,7 @@ class UIScene extends Phaser.Scene {
     this.burstTx?.setVisible(!!burstUnlocked);
     if(gs2&&burstUnlocked){
       const cd=Math.max(0,Math.ceil((20000-(this.game.loop.time-gs2.burstCd))/1000));
-      this.burstCdTx.setText(cd>0?`${cd}秒`:'準備OK').setVisible(true);
+      this.burstCdTx?.setText(cd>0?`${cd}秒`:'準備OK').setVisible(true);
     } else { this.burstCdTx?.setVisible(false); }
 
     const wn=STATE.weaponLv+1;
@@ -1478,6 +1502,10 @@ class UIScene extends Phaser.Scene {
 new Phaser.Game({
   type:Phaser.AUTO, width:GW, height:GH, parent:'gc',
   backgroundColor:'#060e04',
+  scale:{
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+  },
   physics:{default:'arcade',arcade:{gravity:{y:0},debug:false}},
   scene:[TitleScene,GameScene,UIScene],
 });
