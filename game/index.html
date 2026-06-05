@@ -1357,7 +1357,7 @@ class UIScene extends Phaser.Scene {
       const lvTx=this.add.text(bx,by+20,'',{fontSize:'11px',fill:'#88ff88'})
         .setOrigin(0.5).setScrollFactor(0).setDepth(2503);
       [bg,lbl,sub,lvTx].forEach(o=>o.setVisible(false));
-      bg.on('pointerdown',()=>this._craft(cr,bg,lvTx));
+      bg.on('pointerdown',()=>this._craft(cr,bg,lvTx,lbl,sub));
       bg.on('pointerover',()=>bg.setAlpha(0.7)); bg.on('pointerout',()=>bg.setAlpha(1));
       this.craftBtns.push({bg,lbl,sub,lvTx,cr});
     });
@@ -1379,7 +1379,7 @@ class UIScene extends Phaser.Scene {
     });
   }
 
-  _craft(cr,bg,lvTx) {
+  _craft(cr,bg,lvTx,lbl,sub) {
     const lv=STATE[cr.statKey]||0;
     if(lv>=cr.max){floatBtnErrUI(this,bg,'MAX!');return;}
     if((STATE[cr.type]||0)<cr.cost){floatBtnErrUI(this,bg,'素材不足');return;}
