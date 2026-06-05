@@ -71,14 +71,14 @@ function startBGM() {
     gain.gain.value = vols[i];
     osc.connect(gain); gain.connect(master);
     osc.start(); lfo.start();
-    return { osc, gain };
+    return { osc, lfo, gain };
   });
   _bgm = { nodes, master };
 }
 
 function stopBGM() {
   if (!_bgm) return;
-  try { _bgm.nodes.forEach(n=>{ n.osc.stop(); }); _bgm.master.disconnect(); } catch(e){}
+  try { _bgm.nodes.forEach(n=>{ n.osc.stop(); n.lfo?.stop(); }); _bgm.master.disconnect(); } catch(e){}
   _bgm = null;
 }
 
@@ -527,12 +527,7 @@ class GameScene extends Phaser.Scene {
 
   _areaBorders() {
     const g=this.add.graphics();
-    const borders=[
-      {r:900, col:0x44ff44,a:0.22},
-      {r:1700,col:0x8888ff,a:0.18},
-      {r:2500,col:0xff8844,a:0.18},
-    ];
-    borders.forEach(b=>{g.lineStyle(3,b.col,b.a); g.strokeCircle(CX,CY,b.r);});
+    AREA_DATA.slice(0,3).forEach(a=>{g.lineStyle(3,a.border,0.20); g.strokeCircle(CX,CY,a.r);});
     g.setDepth(2);
 
     // Area name labels
