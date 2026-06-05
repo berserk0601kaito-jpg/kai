@@ -695,8 +695,8 @@ class GameScene extends Phaser.Scene {
     this.dropItems.push(dot);
   }
 
-  _collectDropItems(px,py) {
-    const toRm=this.dropItems.filter(d=>Math.hypot(d.x-px,d.y-py)<58);
+  _collectDropItems(px,py,range=58) {
+    const toRm=this.dropItems.filter(d=>Math.hypot(d.x-px,d.y-py)<range);
     if(!toRm.length) return false;
     toRm.forEach(d=>{
       const t=d.dropType;
@@ -870,10 +870,10 @@ class GameScene extends Phaser.Scene {
     const range=(this.collectRange||65)*bonus;
 
     // Drop items (meat/skin/gem on ground)
-    if (this._collectDropItems(px,py)) { this.tCol=time; return; }
+    if (this._collectDropItems(px,py,range)) { this.tCol=time; return; }
 
     // Coins
-    const toRm=this.coins.filter(c=>Math.hypot(c.x-px,c.y-py)<62);
+    const toRm=this.coins.filter(c=>Math.hypot(c.x-px,c.y-py)<range);
     if(toRm.length){
       const total=toRm.reduce((s,c)=>s+(c.goldAmt||0),0);
       toRm.forEach(c=>c.destroy());
