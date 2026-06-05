@@ -1119,7 +1119,7 @@ class GameScene extends Phaser.Scene {
       if(STATE.kills>=th&&prev<th){
         this._lastMilestone=th;
         const bonus=th*5;
-        STATE.gold+=bonus;
+        STATE.gold+=bonus; STATE.totalGold+=bonus;
         this.scene.get('UIScene')?.notify(`🏆 ${th}体撃破達成！ ボーナス +${bonus}G`,'#ffdd00',2500);
         snd('upgrade');
       }
