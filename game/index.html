@@ -1164,7 +1164,7 @@ class UIScene extends Phaser.Scene {
     this._statsPanel();
     this._pauseOverlay();
     this._mobileControls();
-    this.showStats=false; this.paused=false; this.showCraft=false;
+    this.showStats=false; this.paused=false; this.showCraft=false; this._mmTick=0;
     this.input.keyboard?.on('keydown-TAB',(e)=>{e.preventDefault();this._toggleStats();});
     this.input.keyboard?.on('keydown-ESC',()=>this._togglePause());
     this.input.keyboard?.on('keydown-C',  ()=>this._toggleCraft());
