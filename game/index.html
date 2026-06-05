@@ -1329,8 +1329,21 @@ class UIScene extends Phaser.Scene {
       .setOrigin(0.5).setScrollFactor(0).setDepth(4001).setVisible(false);
     this.pauseHint=this.add.text(GW/2,GH/2+40,'[ESC] / タップで再開',{fontSize:'16px',fill:'#aaaaaa'})
       .setOrigin(0.5).setScrollFactor(0).setDepth(4001).setVisible(false);
-    // Tap to resume on mobile
-    this.pauseBg.setInteractive().on('pointerdown',()=>this._togglePause());
+    // Title return button
+    this.pauseHomeBg=this.add.rectangle(GW/2,GH/2+95,180,42,0x2a0a0a,0.95)
+      .setScrollFactor(0).setDepth(4002).setStrokeStyle(2,0xff6644).setVisible(false).setInteractive({useHandCursor:true});
+    this.pauseHomeTx=this.add.text(GW/2,GH/2+95,'🏠 タイトルへ',{fontSize:'14px',fill:'#ff8844',stroke:'#000',strokeThickness:2})
+      .setOrigin(0.5).setScrollFactor(0).setDepth(4003).setVisible(false);
+    this.pauseHomeBg.on('pointerdown',()=>{
+      stopBGM();
+      this.scene.stop('GameScene');
+      this.scene.stop();
+      this.scene.start('TitleScene');
+    });
+    // Tap to resume on mobile (only on background, not on home button area)
+    this.pauseBg.setInteractive().on('pointerdown',(ptr)=>{
+      if(Math.hypot(ptr.x-GW/2,ptr.y-(GH/2+95))>30) this._togglePause();
+    });
   }
 
   _togglePause() {
@@ -1338,7 +1351,7 @@ class UIScene extends Phaser.Scene {
     const gs=this.scene.get('GameScene');
     if(this.paused){ gs?.scene.pause(); }
     else            { gs?.scene.resume(); }
-    [this.pauseBg,this.pauseTx,this.pauseHint].forEach(o=>o?.setVisible(this.paused));
+    [this.pauseBg,this.pauseTx,this.pauseHint,this.pauseHomeBg,this.pauseHomeTx].forEach(o=>o?.setVisible(this.paused));
   }
 
   // ── CRAFT PANEL ──
