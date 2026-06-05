@@ -873,7 +873,7 @@ class GameScene extends Phaser.Scene {
       if(dist<e.d.aggro){
         const ang=Math.atan2(py-e.py,px-e.px);
         e.ph.body.setVelocity(Math.cos(ang)*e.d.spd,Math.sin(ang)*e.d.spd);
-        if(dist<44&&time-e.atkCd>1100){
+        if(dist<44&&time-e.atkCd>1100&&!(this.invincibleUntil>time)){
           e.atkCd=time;
           const dmg=Math.max(1,Math.round(e.d.atk*100/(100+this.pdef)));
           this.php=Math.max(0,this.php-dmg);
@@ -970,6 +970,7 @@ class GameScene extends Phaser.Scene {
   _dead() {
     this.php=Math.round(this.phm*0.3);
     this.pl.setPosition(CX,CY);
+    this.invincibleUntil=(this.time?.now||0)+3500;
     floatTxt(this,CX,CY-65,'💀 気絶！拠点へ帰還...','#ff8800');
     shake(this,0.016,320);
     snd('die');
@@ -1016,7 +1017,8 @@ class GameScene extends Phaser.Scene {
       name: `${wName}(W${w})`,
       spd:  Math.min(120, 70+w*3),
     };
-    const count=Math.min(2+Math.floor(w*0.4),6);
+    const existing=this.enemies.filter(e=>e.type==='wave'&&e.alive).length;
+    const count=Math.min(2+Math.floor(w*0.4),6,Math.max(0,10-existing));
     for(let i=0;i<count;i++) this._spawn('wave',waveDef);
 
     this.scene.get('UIScene')?.notify(`⚡ WAVE ${w}: ${wName} ×${count}体出現！`,'#ff6644',3500);
