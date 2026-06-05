@@ -313,6 +313,7 @@ class Enemy {
     this._depth();
   }
   hit(dmg) {
+    if(!this.alive) return;
     this.hp-=dmg;
     this.scene.tweens.add({targets:this.sp,alpha:0.12,duration:55,yoyo:true});
     if(this.hp<=0) this.die();
@@ -1111,7 +1112,7 @@ class GameScene extends Phaser.Scene {
   // ── AUTO SAVE ──
   _autoSave(time) {
     if(time-this.tSave>30000){
-      this.tSave=time; STATE.playTime=(STATE.playTime||0)+30; save();
+      const dt=Math.round((time-this.tSave)/1000); this.tSave=time; STATE.playTime=(STATE.playTime||0)+dt; save();
     }
   }
 
