@@ -616,6 +616,7 @@ class GameScene extends Phaser.Scene {
       const coin=this.add.circle(cx,cy,5.5,0xffd700);
       coin.setDepth(500).setStrokeStyle(1.2,0xaa8800);
       coin.goldAmt=amount;
+      coin._spawnTime=this.time.now;
       this.coins.push(coin);
       this.tweens.add({targets:coin,y:cy-24,duration:270,ease:'Quad.Out',
         onComplete:()=>this.tweens.add({targets:coin,y:cy,duration:200,ease:'Bounce.Out'})});
@@ -662,7 +663,8 @@ class GameScene extends Phaser.Scene {
     this.tweens.add({targets:dot,y:iy-18,duration:200,ease:'Quad.Out',
       onComplete:()=>this.tweens.add({targets:dot,y:iy,duration:160,ease:'Bounce.Out'})});
     // Pulse
-    this.tweens.add({targets:dot,scaleX:1.25,scaleY:1.25,duration:600,yoyo:true,repeat:-1,ease:'Sine.InOut'});
+    dot._pulseTween=this.tweens.add({targets:dot,scaleX:1.25,scaleY:1.25,duration:600,yoyo:true,repeat:-1,ease:'Sine.InOut'});
+    dot._spawnTime=this.time.now;
     this.dropItems.push(dot);
   }
 
@@ -675,6 +677,7 @@ class GameScene extends Phaser.Scene {
       const labels={meat:'🥩 肉',skin:'🫧 皮',gem:'💎 魔石'};
       floatTxt(this,d.x,d.y-22,`+1 ${labels[t]||t}`,'#ffbbbb');
       snd('collect');
+      d._pulseTween?.stop();
       d.destroy();
       this.dropItems=this.dropItems.filter(x=>x!==d);
     });
@@ -828,6 +831,15 @@ class GameScene extends Phaser.Scene {
     if(time-this.tCol<1000) return;
     const px=this.pl.x, py=this.pl.y;
     const bonus=BASE_DATA[STATE.baseLv].bonus;
+
+    // 60秒経過したドロップアイテム・コインを自動削除（蓄積防止）
+    const EXPIRE=60000;
+    const expiredDrops=this.dropItems.filter(d=>(time-(d._spawnTime||0))>EXPIRE);
+    expiredDrops.forEach(d=>{d._pulseTween?.stop();d.destroy();});
+    if(expiredDrops.length) this.dropItems=this.dropItems.filter(d=>!expiredDrops.includes(d));
+    const expiredCoins=this.coins.filter(c=>(time-(c._spawnTime||0))>EXPIRE);
+    expiredCoins.forEach(c=>c.destroy());
+    if(expiredCoins.length) this.coins=this.coins.filter(c=>!expiredCoins.includes(c));
     const range=(this.collectRange||65)*bonus;
 
     // Drop items (meat/skin/gem on ground)
