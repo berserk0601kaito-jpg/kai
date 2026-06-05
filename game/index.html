@@ -430,6 +430,7 @@ class TitleScene extends Phaser.Scene {
     r.on('pointerover',()=>{r.setScale(1.03);t.setScale(1.03);});
     r.on('pointerout', ()=>{r.setScale(1);   t.setScale(1);   });
     r.on('pointerdown',()=>cb());
+    return r;
   }
 }
 
@@ -558,7 +559,7 @@ class GameScene extends Phaser.Scene {
   _makeLockMarkers() {
     const locks=[
       {areaId:2,x:CX+940, y:CY, text:'🔒 拠点Lv2 で解放'},
-      {areaId:3,x:CX+1740,y:CY, text:'🔒 銀の剣（武器Lv2）で解放'},
+      {areaId:3,x:CX+1740,y:CY, text:'🔒 鉄の剣（武器Lv2）で解放'},
       {areaId:4,x:CX+2540,y:CY, text:'🔒 銀の鎧（防具Lv3）で解放'},
     ];
     for(const lk of locks){
