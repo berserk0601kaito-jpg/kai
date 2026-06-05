@@ -903,8 +903,8 @@ class GameScene extends Phaser.Scene {
           if(this.php<=0) this._dead();
         }
       } else {
-        e.wanderT-=delta;
-        if(e.wanderT<=0){e.wanderT=Phaser.Math.Between(1500,4000);e.wanderA=Math.random()*Math.PI*2;}
+        e.wanderT=Math.max(0,e.wanderT-delta);
+        if(e.wanderT===0){e.wanderT=Phaser.Math.Between(1500,4000);e.wanderA=Math.random()*Math.PI*2;}
         e.ph.body.setVelocity(Math.cos(e.wanderA)*e.d.spd*0.33,Math.sin(e.wanderA)*e.d.spd*0.33);
       }
       e.sync();
@@ -1513,11 +1513,14 @@ class UIScene extends Phaser.Scene {
     this.gldTxt.setText(`💰 ${STATE.gold}G`);
     this.wdTxt.setText( `🌲 ${STATE.wood}`);
     this.resTxt.setText(`🥩${STATE.meat||0}  🫧${STATE.skin||0}  💎${STATE.gem||0}  🪨${STATE.stone||0}`);
-    this.gearTx.setText(`⚔${WEAPON_DATA[STATE.weaponLv].name}  🛡${ARMOR_DATA[STATE.armorLv].name}`);
+    const gearKey=`${STATE.weaponLv}_${STATE.armorLv}`;
+    if(this._gearKey!==gearKey){this._gearKey=gearKey;
+      this.gearTx.setText(`⚔${WEAPON_DATA[STATE.weaponLv].name}  🛡${ARMOR_DATA[STATE.armorLv].name}`);}
     const waveStr=STATE.wave>0?`  WAVE:${STATE.wave}`:'';
     this.staTxt.setText(`撃破:${STATE.kills}  エリア:${gs.curArea}/4${waveStr}`);
     const passive=BASE_DATA[STATE.baseLv].passive;
-    this.passiveTx.setText(passive>0?`🏠 +${passive}G/5秒`:'');
+    if(this._passiveLv!==STATE.baseLv){this._passiveLv=STATE.baseLv;
+      this.passiveTx.setText(passive>0?`🏠 +${passive}G/5秒`:'');}
 
     // Burst button (bottom-right)
     if(!this._burstBtnBuilt){
@@ -1541,15 +1544,18 @@ class UIScene extends Phaser.Scene {
       this.burstCdTx?.setText(cd>0?`${cd}秒`:'準備OK').setVisible(true);
     } else { this.burstCdTx?.setVisible(false); }
 
-    const wn=STATE.weaponLv+1;
-    this.weaponSub.setText(wn<WEAPON_DATA.length?`${WEAPON_DATA[wn].name} / ${WEAPON_DATA[wn].cost}G`:'MAX');
-    const an=STATE.armorLv+1;
-    this.armorSub.setText(an<ARMOR_DATA.length?`${ARMOR_DATA[an].name} / ${ARMOR_DATA[an].cost}G`:'MAX');
-    const bn=STATE.baseLv+1;
-    if(bn<BASE_DATA.length){
-      const bd=BASE_DATA[bn];
-      this.baseSub.setText(`${bd.name} / ${bd.goldCost}G+木${bd.woodCost}${bd.stoneCost?'+石'+bd.stoneCost:''}`);
-    } else this.baseSub.setText('MAX');
+    const upgradeKey=`${STATE.weaponLv}_${STATE.armorLv}_${STATE.baseLv}`;
+    if(this._upgradeKey!==upgradeKey){this._upgradeKey=upgradeKey;
+      const wn=STATE.weaponLv+1;
+      this.weaponSub.setText(wn<WEAPON_DATA.length?`${WEAPON_DATA[wn].name} / ${WEAPON_DATA[wn].cost}G`:'MAX');
+      const an=STATE.armorLv+1;
+      this.armorSub.setText(an<ARMOR_DATA.length?`${ARMOR_DATA[an].name} / ${ARMOR_DATA[an].cost}G`:'MAX');
+      const bn=STATE.baseLv+1;
+      if(bn<BASE_DATA.length){
+        const bd=BASE_DATA[bn];
+        this.baseSub.setText(`${bd.name} / ${bd.goldCost}G+木${bd.woodCost}${bd.stoneCost?'+石'+bd.stoneCost:''}`);
+      } else this.baseSub.setText('MAX');
+    }
 
     this._drawMinimap();
     if(this.showStats) this._refreshStats();
