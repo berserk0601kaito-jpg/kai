@@ -878,7 +878,7 @@ class GameScene extends Phaser.Scene {
     for(const t of this.trees){
       if(t.depleted||!areaUnlocked(t.areaId)) continue;
       if(Math.hypot(t.x-px,t.y-py)<range){
-        const got=Math.max(1,Math.round(bonus));
+        const got=Math.max(1,Math.floor(bonus)+(Math.random()<bonus%1?1:0));
         STATE.wood+=got; t.wood-=got;
         floatTxt(this,t.x,t.y-32,`🌲 +${got}`,'#88ff88');
         snd('collect');
@@ -1095,7 +1095,7 @@ class GameScene extends Phaser.Scene {
     if(rate<=0) return;
     if(time-this.tPassive>5000){
       this.tPassive=time;
-      STATE.gold+=rate;
+      STATE.gold+=rate; STATE.totalGold+=rate;
       floatTxt(this,this.pl.x+Phaser.Math.Between(-30,30),this.pl.y-50,`+${rate}G 🏠`,'#ffd700');
     }
   }
