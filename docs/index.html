@@ -84,6 +84,8 @@ function stopBGM() {
 
 function setBGMArea(areaId) {
   if (!_bgm) return;
+  if (_bgm._lastArea === areaId) return; // 重複呼び出し防止
+  _bgm._lastArea = areaId;
   const ctx = ac(); if (!ctx) return;
   // Shift pitch slightly per area
   const shifts = [1.0, 0.97, 0.94, 1.06];
@@ -990,10 +992,11 @@ class GameScene extends Phaser.Scene {
   _dead() {
     this.php=Math.round(this.phm*0.3);
     this.pl.setPosition(CX,CY);
-    this.invincibleUntil=(this.time?.now||0)+3500;
+    this.invincibleUntil=(this.time?.now||0)+5000;
     floatTxt(this,CX,CY-65,'💀 気絶！拠点へ帰還...','#ff8800');
     shake(this,0.016,320);
     snd('die');
+    save();
   }
 
   // ── CRAFT BONUSES ──
