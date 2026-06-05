@@ -6,791 +6,917 @@
 <title>Forest Survival</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: #0d1117; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: 'Segoe UI', sans-serif; }
-#game-container canvas { display: block; }
+body { background: #060e04; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
 </style>
 </head>
 <body>
-<div id="game-container"></div>
+<div id="gc"></div>
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
 <script>
-// ─────────────────────────────────────────────
+'use strict';
+// ═══════════════════════════════════════════
 // CONSTANTS
-// ─────────────────────────────────────────────
-const GW = 800, GH = 600;
-const WW = 4000, WH = 4000;
-const HUD_H = 52;
-const PANEL_H = 70;
+// ═══════════════════════════════════════════
+const GW = 800, GH = 600, WW = 4000, WH = 4000;
+const CX = WW / 2, CY = WH / 2;
+const HUD_H = 54, PANEL_H = 72;
+const SAVE_KEY = 'fsurvival_v3';
+
+const AREA_DATA = [
+  { id:1, name:'入門の森', r:900,  gcol:0x2a6018, border:0x44ff44 },
+  { id:2, name:'深い森',   r:1700, gcol:0x154010, border:0x4488ff },
+  { id:3, name:'山の麓',   r:2500, gcol:0x35281a, border:0xff8844 },
+  { id:4, name:'魔境',     r:3300, gcol:0x180a28, border:0xcc44ff },
+];
 
 const WEAPON_DATA = [
-  { name: '木の棒',   atk: 10,  range: 80,  cost: 0    },
-  { name: '石の斧',   atk: 25,  range: 100, cost: 50   },
-  { name: '鉄の剣',   atk: 50,  range: 120, cost: 150  },
-  { name: '銀の剣',   atk: 100, range: 140, cost: 400  },
-  { name: '魔王の剣', atk: 220, range: 170, cost: 1000 },
+  { name:'木の棒',   atk:10,  range:82,  cost:0,    spd:850 },
+  { name:'石の斧',   atk:28,  range:100, cost:50,   spd:800 },
+  { name:'鉄の剣',   atk:55,  range:122, cost:150,  spd:720 },
+  { name:'銀の剣',   atk:110, range:148, cost:400,  spd:640 },
+  { name:'魔王の剣', atk:230, range:180, cost:1000, spd:560 },
 ];
 
 const ARMOR_DATA = [
-  { name: '布の服',   maxHp: 100,  def: 0,   cost: 0    },
-  { name: '皮の鎧',   maxHp: 200,  def: 10,  cost: 80   },
-  { name: '鉄の鎧',   maxHp: 400,  def: 25,  cost: 200  },
-  { name: '銀の鎧',   maxHp: 800,  def: 50,  cost: 500  },
-  { name: '伝説の鎧', maxHp: 1600, def: 100, cost: 1500 },
+  { name:'布の服',   maxHp:100,  def:0,   cost:0    },
+  { name:'皮の鎧',   maxHp:200,  def:10,  cost:80   },
+  { name:'鉄の鎧',   maxHp:400,  def:25,  cost:200  },
+  { name:'銀の鎧',   maxHp:800,  def:55,  cost:500  },
+  { name:'伝説の鎧', maxHp:1800, def:110, cost:1500 },
 ];
 
 const BASE_DATA = [
-  { name: '初期拠点', bonus: 1.0, goldCost: 0,   woodCost: 0   },
-  { name: 'Lv2 拠点', bonus: 1.2, goldCost: 100, woodCost: 100 },
-  { name: 'Lv3 拠点', bonus: 1.5, goldCost: 100, woodCost: 300 },
-  { name: 'Lv4 拠点', bonus: 2.0, goldCost: 200, woodCost: 500 },
+  { name:'初期拠点', bonus:1.0, regen:1.0, goldCost:0,   woodCost:0   },
+  { name:'Lv2 拠点', bonus:1.2, regen:1.6, goldCost:100, woodCost:100 },
+  { name:'Lv3 拠点', bonus:1.5, regen:2.2, goldCost:100, woodCost:300 },
+  { name:'Lv4 拠点', bonus:2.0, regen:3.5, goldCost:200, woodCost:500 },
 ];
 
-const ENEMY_TYPES = {
-  slime:  { name: 'スライム', hp: 20,   atk: 3,   spd: 55,  aggro: 200, gold: 5,   drop: null,   col: 0x22cc77, w: 22, h: 20, area: 1 },
-  rabbit: { name: 'ウサギ',   hp: 15,   atk: 1,   spd: 95,  aggro: 160, gold: 3,   drop: 'meat', col: 0xffbbcc, w: 18, h: 16, area: 1 },
-  bear:   { name: 'クマ',     hp: 100,  atk: 20,  spd: 48,  aggro: 250, gold: 30,  drop: 'meat', col: 0x774400, w: 40, h: 36, area: 2 },
-  wolf:   { name: 'オオカミ', hp: 60,   atk: 15,  spd: 105, aggro: 200, gold: 20,  drop: 'skin', col: 0x556688, w: 30, h: 26, area: 2 },
-  boar:   { name: 'イノシシ', hp: 150,  atk: 30,  spd: 80,  aggro: 220, gold: 50,  drop: 'meat', col: 0x8b4513, w: 38, h: 28, area: 3 },
-  dragon: { name: 'ドラゴン', hp: 1000, atk: 100, spd: 60,  aggro: 350, gold: 300, drop: 'gem',  col: 0xcc2200, w: 70, h: 60, area: 4 },
+const EDEFS = {
+  slime:  { name:'スライム', hp:22,   atk:3,   spd:55,  aggro:200, gold:5,   drop:null,   col:0x22cc77, w:22, h:20, area:1, max:18, rsec:25 },
+  rabbit: { name:'ウサギ',   hp:15,   atk:1,   spd:100, aggro:160, gold:3,   drop:'meat', col:0xffbbcc, w:18, h:16, area:1, max:14, rsec:20 },
+  bear:   { name:'クマ',     hp:110,  atk:22,  spd:50,  aggro:260, gold:32,  drop:'meat', col:0x774400, w:40, h:36, area:2, max:8,  rsec:40 },
+  wolf:   { name:'オオカミ', hp:65,   atk:16,  spd:108, aggro:210, gold:22,  drop:'skin', col:0x557799, w:30, h:26, area:2, max:10, rsec:35 },
+  boar:   { name:'イノシシ', hp:160,  atk:32,  spd:82,  aggro:230, gold:55,  drop:'meat', col:0x8b4513, w:38, h:28, area:3, max:7,  rsec:50 },
+  goblin: { name:'ゴブリン', hp:90,   atk:25,  spd:95,  aggro:240, gold:40,  drop:'skin', col:0x669933, w:26, h:30, area:3, max:8,  rsec:42 },
+  dragon: { name:'ドラゴン', hp:1200, atk:110, spd:62,  aggro:380, gold:350, drop:'gem',  col:0xcc2200, w:72, h:62, area:4, max:3,  rsec:120 },
 };
 
-// ─────────────────────────────────────────────
-// GAME STATE (shared between scenes)
-// ─────────────────────────────────────────────
+// ═══════════════════════════════════════════
+// GAME STATE
+// ═══════════════════════════════════════════
 const STATE = {
-  gold: 0, wood: 0, meat: 0, skin: 0, gem: 0,
-  weaponLv: 0, armorLv: 0, baseLv: 0,
-  kills: 0, areaUnlocked: 1,
+  gold:0, wood:0, meat:0, skin:0, gem:0, stone:0,
+  weaponLv:0, armorLv:0, baseLv:0,
+  kills:0, totalGold:0,
+  areas:[1],
+  playTime:0,
 };
 
-// ─────────────────────────────────────────────
-// HELPER: draw isometric-style shadow
-// ─────────────────────────────────────────────
-function addShadow(scene, x, y, rw, rh) {
+const save  = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(STATE)); } catch(e){} };
+const load  = () => { try { const r=localStorage.getItem(SAVE_KEY); if(r) Object.assign(STATE, JSON.parse(r)); return !!r; } catch(e){ return false; } };
+const hasSave = () => !!localStorage.getItem(SAVE_KEY);
+const areaUnlocked = id => STATE.areas.includes(id);
+
+function distToArea(dist) {
+  for (let i = AREA_DATA.length-1; i>=0; i--) {
+    if (dist >= (i===0 ? 0 : AREA_DATA[i-1].r)) return AREA_DATA[i].id;
+  }
+  return 1;
+}
+
+// ═══════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════
+function shadow(scene, x, y, w, h) {
   const g = scene.add.graphics();
-  g.fillStyle(0x000000, 0.22);
-  g.fillEllipse(0, 0, rw * 1.4, rh * 0.55);
-  g.x = x; g.y = y + rh * 0.5 + 2;
+  g.fillStyle(0x000000, 0.2);
+  g.fillEllipse(0, 0, w*1.4, h*0.45);
+  g.x = x; g.y = y + h*0.52 + 2;
   return g;
 }
 
-// ─────────────────────────────────────────────
-// TREE CLASS
-// ─────────────────────────────────────────────
+function floatTxt(scene, x, y, msg, col='#ffff00') {
+  const t = scene.add.text(x, y, msg, {fontSize:'14px',fill:col,stroke:'#000',strokeThickness:3})
+    .setOrigin(0.5).setDepth(9999);
+  scene.tweens.add({targets:t, y:y-46, alpha:0, duration:950, onComplete:()=>t.destroy()});
+}
+
+function shake(scene, i=0.005, d=130) {
+  scene.cameras.main.shake(d, i);
+}
+
+// ═══════════════════════════════════════════
+// TREE
+// ═══════════════════════════════════════════
 class Tree {
-  constructor(scene, x, y) {
-    this.scene = scene;
-    this.x = x; this.y = y;
-    this.wood = Phaser.Math.Between(3, 8);
+  constructor(scene, x, y, areaId) {
+    this.scene=scene; this.x=x; this.y=y; this.areaId=areaId;
+    this.woodMax = Phaser.Math.Between(4,9);
+    this.wood = this.woodMax;
     this.depleted = false;
-    this.respawnTime = 0;
 
-    this.shadow = addShadow(scene, x, y, 36, 48);
-    this.trunk = scene.add.rectangle(x, y + 16, 14, 22, 0x7a4f30);
-    this.canopy = scene.add.ellipse(x, y - 10, 50, 54, 0x2d7a2d);
-    this.canopyShade = scene.add.ellipse(x + 6, y - 6, 30, 32, 0x1f5c1f);
-
-    this.setDepth();
-    // physics body for overlap detection
-    this.body = scene.physics.add.existing(scene.add.rectangle(x, y, 40, 60, 0x000000, 0), true);
-    this.body.body.immovable = true;
+    const LC=[0x2d7a2d,0x1a5a1a,0x4a6030,0x2a1050], SC=[0x1a5a1a,0x0f3a0f,0x303820,0x180a28], TC=[0x7a4f30,0x5a3820,0x604830,0x3a2050];
+    const a=areaId-1;
+    this.sh  = shadow(scene,x,y,38,50);
+    this.tr  = scene.add.rectangle(x,y+17,13,24,TC[a]||TC[0]);
+    this.ca  = scene.add.ellipse(x,y-10,52,56,LC[a]||LC[0]);
+    this.cs  = scene.add.ellipse(x+7,y-5,30,32,SC[a]||SC[0]);
+    this.bdy = scene.physics.add.existing(scene.add.rectangle(x,y,42,60,0,0),true);
+    this._depth();
   }
-
-  setDepth() {
-    const d = this.y + 100;
-    this.shadow.setDepth(d - 1);
-    this.trunk.setDepth(d);
-    this.canopy.setDepth(d + 1);
-    this.canopyShade.setDepth(d + 2);
-    if (this.body) this.body.setDepth(d);
+  _depth() {
+    const d=this.y+100;
+    this.sh.setDepth(d-1); this.tr.setDepth(d); this.ca.setDepth(d+1); this.cs.setDepth(d+2);
+    if(this.bdy) this.bdy.setDepth(d);
   }
-
-  setDepleted(d) {
-    this.depleted = d;
-    const alpha = d ? 0.35 : 1;
-    this.trunk.setAlpha(alpha);
-    this.canopy.setAlpha(alpha);
-    this.canopyShade.setAlpha(alpha);
+  setDepleted(v) {
+    this.depleted=v; const a=v?0.28:1;
+    [this.tr,this.ca,this.cs].forEach(o=>o.setAlpha(a));
+    this.sh.setAlpha(v?0.08:0.2);
   }
-
-  destroy() {
-    this.shadow.destroy();
-    this.trunk.destroy();
-    this.canopy.destroy();
-    this.canopyShade.destroy();
-    this.body.destroy();
-  }
+  destroy() { [this.sh,this.tr,this.ca,this.cs,this.bdy].forEach(o=>{try{o.destroy();}catch(e){}}); }
 }
 
-// ─────────────────────────────────────────────
-// ROCK CLASS
-// ─────────────────────────────────────────────
+// ═══════════════════════════════════════════
+// ROCK
+// ═══════════════════════════════════════════
 class Rock {
-  constructor(scene, x, y) {
-    this.scene = scene;
-    this.x = x; this.y = y;
-    this.stone = Phaser.Math.Between(2, 5);
-    this.depleted = false;
-
-    this.shadow = addShadow(scene, x, y, 42, 28);
-    this.base = scene.add.ellipse(x, y + 2, 46, 30, 0x888888);
-    this.top  = scene.add.ellipse(x - 4, y - 6, 32, 22, 0xaaaaaa);
-    this.shine = scene.add.ellipse(x - 8, y - 10, 10, 7, 0xdddddd);
-
-    this.setDepth();
-    this.body = scene.physics.add.existing(scene.add.rectangle(x, y, 42, 30, 0, 0), true);
+  constructor(scene, x, y, areaId) {
+    this.scene=scene; this.x=x; this.y=y; this.areaId=areaId;
+    this.stoneMax=Phaser.Math.Between(3,6); this.stone=this.stoneMax; this.depleted=false;
+    const BC=[0x888888,0x667766,0x998877,0x664488], TC=[0xaaaaaa,0x889988,0xbbaa99,0x9966bb];
+    const a=areaId-1;
+    this.sh  = shadow(scene,x,y,44,30);
+    this.ba  = scene.add.ellipse(x,y+2,48,32,BC[a]||BC[0]);
+    this.to  = scene.add.ellipse(x-4,y-7,34,24,TC[a]||TC[0]);
+    this.sh2 = scene.add.ellipse(x-9,y-11,11,8,0xdddddd);
+    this.bdy = scene.physics.add.existing(scene.add.rectangle(x,y,44,32,0,0),true);
+    this._depth();
   }
-
-  setDepth() {
-    const d = this.y + 50;
-    this.shadow.setDepth(d - 1);
-    this.base.setDepth(d);
-    this.top.setDepth(d + 1);
-    this.shine.setDepth(d + 2);
+  _depth() {
+    const d=this.y+50;
+    [this.sh,this.ba,this.to,this.sh2].forEach((o,i)=>o.setDepth(d+i));
   }
-
-  setDepleted(d) {
-    this.depleted = d;
-    const alpha = d ? 0.3 : 1;
-    [this.base, this.top, this.shine].forEach(o => o.setAlpha(alpha));
+  setDepleted(v) {
+    this.depleted=v; const a=v?0.22:1;
+    [this.ba,this.to,this.sh2].forEach(o=>o.setAlpha(a));
+    this.sh.setAlpha(v?0.07:0.2);
   }
-
-  destroy() {
-    [this.shadow, this.base, this.top, this.shine, this.body].forEach(o => o.destroy());
-  }
+  destroy() { [this.sh,this.ba,this.to,this.sh2,this.bdy].forEach(o=>{try{o.destroy();}catch(e){}}); }
 }
 
-// ─────────────────────────────────────────────
-// ENEMY CLASS
-// ─────────────────────────────────────────────
+// ═══════════════════════════════════════════
+// ENEMY
+// ═══════════════════════════════════════════
 class Enemy {
   constructor(scene, type, x, y) {
-    this.scene = scene;
-    this.type = type;
-    const d = ENEMY_TYPES[type];
-    this.data = d;
-    this.maxHp = d.hp;
-    this.hp = d.hp;
-    this.atk = d.atk;
-    this.spd = d.spd;
-    this.aggroRange = d.aggro;
-    this.gold = d.gold;
-    this.drop = d.drop;
-    this.alive = true;
-    this.attackCooldown = 0;
-    this.wanderTimer = 0;
-    this.wanderAngle = Math.random() * Math.PI * 2;
+    this.scene=scene; this.type=type;
+    const d=EDEFS[type]; this.d=d;
+    this.hp=d.hp; this.maxHp=d.hp; this.alive=true;
+    this.atkCd=0; this.wanderT=Phaser.Math.Between(500,2500); this.wanderA=Math.random()*Math.PI*2;
 
-    this.shadow = addShadow(scene, x, y, d.w, d.h);
-    this.sprite = scene.add.rectangle(x, y, d.w, d.h, d.col);
-    this.sprite.setStrokeStyle(1.5, Phaser.Display.Color.GetColor32(
-      ((d.col >> 16) & 0xff) * 0.6 | 0,
-      ((d.col >> 8) & 0xff) * 0.6 | 0,
-      (d.col & 0xff) * 0.6 | 0, 255));
+    this.sh  = shadow(scene,x,y,d.w,d.h);
+    this.sp  = scene.add.rectangle(x,y,d.w,d.h,d.col);
+    const dk = Phaser.Display.Color.ValueToColor(d.col); dk.darken(30);
+    this.sp.setStrokeStyle(2,dk.color);
 
-    // HP bar
-    this.hpBg   = scene.add.rectangle(x, y - d.h / 2 - 8, d.w, 5, 0x330000);
-    this.hpBar  = scene.add.rectangle(x - d.w / 2, y - d.h / 2 - 8, d.w, 5, 0xff3333);
-    this.hpBar.setOrigin(0, 0.5);
+    this.eL  = scene.add.circle(x-d.w*0.22,y-d.h*0.08,2.5,0xffffff);
+    this.eR  = scene.add.circle(x+d.w*0.22,y-d.h*0.08,2.5,0xffffff);
+    this.pL  = scene.add.circle(x-d.w*0.22+0.5,y-d.h*0.08,1.2,0x111111);
+    this.pR  = scene.add.circle(x+d.w*0.22+0.5,y-d.h*0.08,1.2,0x111111);
 
-    // physics
-    this.phys = scene.physics.add.existing(scene.add.rectangle(x, y, d.w, d.h, 0, 0));
-    this.phys.body.setCollideWorldBounds(true);
+    this.hbg = scene.add.rectangle(x,y-d.h/2-9,d.w+4,6,0x220000);
+    this.hbr = scene.add.rectangle(x-(d.w+4)/2,y-d.h/2-9,d.w+4,6,0xff3333).setOrigin(0,0.5);
 
-    this.setDepth();
+    this.tag = d.hp>=100 ? scene.add.text(x,y-d.h/2-20,d.name,{fontSize:'10px',fill:'#ffaa88',stroke:'#000',strokeThickness:2}).setOrigin(0.5) : null;
+
+    this.ph  = scene.physics.add.existing(scene.add.rectangle(x,y,d.w*0.8,d.h*0.8,0,0));
+    this.ph.body.setCollideWorldBounds(true);
+    this._depth();
   }
-
-  get x() { return this.phys.x; }
-  get y() { return this.phys.y; }
-
-  setDepth() {
-    const d = this.phys.y + 80;
-    this.shadow.setDepth(d - 1);
-    this.sprite.setDepth(d);
-    this.hpBg.setDepth(d + 10);
-    this.hpBar.setDepth(d + 11);
+  get px(){return this.ph.x;} get py(){return this.ph.y;}
+  _depth() {
+    const d=this.py+80;
+    this.sh.setDepth(d-1); this.sp.setDepth(d);
+    [this.eL,this.eR].forEach(o=>o.setDepth(d+1));
+    [this.pL,this.pR].forEach(o=>o.setDepth(d+2));
+    this.hbg.setDepth(d+9); this.hbr.setDepth(d+10);
+    if(this.tag) this.tag.setDepth(d+11);
   }
-
-  updateVisuals() {
-    const x = this.phys.x, y = this.phys.y;
-    const d = this.data;
-    this.sprite.setPosition(x, y);
-    this.shadow.setPosition(x, y + d.h * 0.5 + 2);
-    this.hpBg.setPosition(x, y - d.h / 2 - 8);
-    const ratio = Math.max(0, this.hp / this.maxHp);
-    this.hpBar.setPosition(x - d.w / 2, y - d.h / 2 - 8);
-    this.hpBar.setSize(d.w * ratio, 5);
-    this.setDepth();
+  sync() {
+    const x=this.px, y=this.py, d=this.d;
+    this.sp.setPosition(x,y);
+    this.sh.setPosition(x,y+d.h*0.52+2);
+    this.eL.setPosition(x-d.w*0.22,y-d.h*0.08); this.eR.setPosition(x+d.w*0.22,y-d.h*0.08);
+    this.pL.setPosition(x-d.w*0.22+0.5,y-d.h*0.08); this.pR.setPosition(x+d.w*0.22+0.5,y-d.h*0.08);
+    this.hbg.setPosition(x,y-d.h/2-9);
+    const r=Math.max(0,this.hp/this.maxHp);
+    this.hbr.setPosition(x-(d.w+4)/2,y-d.h/2-9).setSize((d.w+4)*r,6);
+    if(this.tag) this.tag.setPosition(x,y-d.h/2-20);
+    this._depth();
   }
-
-  takeDamage(dmg) {
-    this.hp -= dmg;
-    // flash
-    this.scene.tweens.add({ targets: this.sprite, alpha: 0.2, duration: 60, yoyo: true });
-    if (this.hp <= 0) this.die();
+  hit(dmg) {
+    this.hp-=dmg;
+    this.scene.tweens.add({targets:this.sp,alpha:0.12,duration:55,yoyo:true});
+    if(this.hp<=0) this.die();
   }
-
   die() {
-    this.alive = false;
-    this.phys.body.enable = false;
-    this.scene.tweens.add({
-      targets: [this.sprite, this.hpBg, this.hpBar, this.shadow],
-      alpha: 0, duration: 300,
-      onComplete: () => this.destroy(),
-    });
-    this.scene.spawnGold(this.phys.x, this.phys.y, this.gold);
-    if (this.drop) this.scene.spawnDrop(this.phys.x, this.phys.y, this.drop);
-    STATE.gold += this.gold;
-    STATE.kills++;
+    this.alive=false; this.ph.body.enable=false;
+    const all=[this.sp,this.hbg,this.hbr,this.sh,this.eL,this.eR,this.pL,this.pR];
+    if(this.tag) all.push(this.tag);
+    this.scene.tweens.add({targets:all,alpha:0,scaleX:1.5,scaleY:1.5,duration:300,onComplete:()=>this.destroy()});
+    this.scene.onEnemyDied(this);
   }
-
   destroy() {
-    [this.sprite, this.hpBg, this.hpBar, this.shadow, this.phys].forEach(o => { try { o.destroy(); } catch(e){} });
+    [this.sp,this.hbg,this.hbr,this.sh,this.eL,this.eR,this.pL,this.pR,this.ph].forEach(o=>{try{o.destroy();}catch(e){}});
+    if(this.tag){try{this.tag.destroy();}catch(e){}}
   }
 }
 
-// ─────────────────────────────────────────────
-// FLOATING TEXT helper
-// ─────────────────────────────────────────────
-function floatText(scene, x, y, msg, color = '#ffff00') {
-  const t = scene.add.text(x, y, msg, { fontSize: '14px', fill: color, stroke: '#000', strokeThickness: 3 });
-  t.setOrigin(0.5);
-  t.setDepth(9999);
-  scene.tweens.add({ targets: t, y: y - 40, alpha: 0, duration: 900, onComplete: () => t.destroy() });
+// ═══════════════════════════════════════════
+// TITLE SCENE
+// ═══════════════════════════════════════════
+class TitleScene extends Phaser.Scene {
+  constructor(){super({key:'TitleScene'});}
+  create() {
+    const g=this.add.graphics();
+    g.fillStyle(0x060e04); g.fillRect(0,0,GW,GH);
+
+    // Decorative trees
+    const rng=new Phaser.Math.RandomDataGenerator(['title']);
+    for(let i=0;i<25;i++){
+      const tx=rng.between(0,GW),ty=rng.between(60,GH);
+      const s=rng.realInRange(0.4,1.2);
+      this.add.ellipse(tx,ty,55*s,70*s,rng.pick([0x1a4a10,0x2a6a18,0x0e3008]),0.35);
+    }
+
+    // Pulsing glow behind title
+    const glow=this.add.graphics();
+    glow.fillStyle(0x44ff44,0.04);
+    glow.fillCircle(GW/2,180,200);
+    this.tweens.add({targets:glow,alpha:0.5,duration:2000,yoyo:true,repeat:-1});
+
+    this.add.text(GW/2,100,'🌲',{fontSize:'64px'}).setOrigin(0.5);
+    this.add.text(GW/2,190,'FOREST SURVIVAL',{
+      fontSize:'44px',fill:'#88ff88',stroke:'#000',strokeThickness:7,fontStyle:'bold'
+    }).setOrigin(0.5);
+    this.add.text(GW/2,242,'フォレスト・サバイバル',{
+      fontSize:'15px',fill:'#66cc66',stroke:'#000',strokeThickness:3
+    }).setOrigin(0.5);
+
+    this._btn(GW/2,330,230,54,'⚔  NEW GAME',0x1a4010,0x44ff44,()=>{
+      Object.assign(STATE,{gold:0,wood:0,meat:0,skin:0,gem:0,stone:0,weaponLv:0,armorLv:0,baseLv:0,kills:0,totalGold:0,areas:[1],playTime:0});
+      localStorage.removeItem(SAVE_KEY);
+      this.scene.start('GameScene');
+      this.scene.launch('UIScene');
+    });
+
+    if(hasSave()){
+      this._btn(GW/2,406,230,54,'📂  続きから',0x0a1a30,0x4499ff,()=>{
+        load();
+        this.scene.start('GameScene');
+        this.scene.launch('UIScene');
+      });
+    }
+
+    this.add.text(GW/2,GH-20,'WASD / 矢印キー で移動　　敵・素材に近づくと自動で攻撃・採集',{
+      fontSize:'11px',fill:'#446644'
+    }).setOrigin(0.5);
+
+    // Version
+    this.add.text(GW-8,GH-8,'v2.0',{fontSize:'10px',fill:'#334433'}).setOrigin(1);
+  }
+
+  _btn(x,y,w,h,label,bg,border,cb){
+    const r=this.add.rectangle(x,y,w,h,bg).setStrokeStyle(2,border).setInteractive({useHandCursor:true});
+    const t=this.add.text(x,y,label,{fontSize:'19px',fill:'#fff',stroke:'#000',strokeThickness:3}).setOrigin(0.5);
+    r.on('pointerover',()=>{r.setScale(1.03);t.setScale(1.03);});
+    r.on('pointerout', ()=>{r.setScale(1);   t.setScale(1);   });
+    r.on('pointerdown',()=>cb());
+  }
 }
 
-// ─────────────────────────────────────────────
-// MAIN GAME SCENE
-// ─────────────────────────────────────────────
+// ═══════════════════════════════════════════
+// GAME SCENE
+// ═══════════════════════════════════════════
 class GameScene extends Phaser.Scene {
-  constructor() { super({ key: 'GameScene' }); }
+  constructor(){super({key:'GameScene'});}
 
   create() {
-    this.physics.world.setBounds(0, 0, WW, WH);
+    this.physics.world.setBounds(0,0,WW,WH);
+    this._ground();
+    this._areaBorders();
 
-    this._buildGround();
-    this._buildBorder();
+    this.trees=[]; this.rocks=[]; this.enemies=[];
+    this.coins=[]; this.respawnQ=[]; this.enemyQ=[];
 
-    this.trees   = [];
-    this.rocks   = [];
-    this.enemies = [];
-    this.goldParticles = [];
-    this.drops   = [];
-
-    this._spawnTrees();
-    this._spawnRocks();
-    this._spawnEnemies();
+    this._resources();
+    this._spawnAll();
+    this._spawnBase();
 
     // Player
-    const cx = WW / 2, cy = WH / 2;
-    this.playerShadow = addShadow(this, cx, cy, 28, 38);
-    this.player = this.physics.add.existing(this.add.rectangle(cx, cy, 28, 38, 0x4488ff));
-    this.player.setDepth(cy);
-    this.player.body.setCollideWorldBounds(true);
+    this.pSh = shadow(this,CX,CY,28,38);
+    this.pl  = this.physics.add.existing(this.add.rectangle(CX,CY,28,38,0x4488ff));
+    this.pl.body.setCollideWorldBounds(true);
+    this.pl.body.setDrag(220);
+    this.pl.setDepth(CY+50);
 
-    // Player name tag
-    this.playerLabel = this.add.text(cx, cy - 28, 'YOU', {
-      fontSize: '10px', fill: '#ffffff', stroke: '#000', strokeThickness: 2
-    }).setOrigin(0.5).setDepth(9000);
+    this.pLbl = this.add.text(CX,CY-28,'YOU',{fontSize:'10px',fill:'#fff',stroke:'#000',strokeThickness:2}).setOrigin(0.5).setDepth(9000);
+    this.pHbg = this.add.rectangle(CX,CY-22,30,5,0x330000).setDepth(9001);
+    this.pHbr = this.add.rectangle(CX-15,CY-22,30,5,0x22ff66).setOrigin(0,0.5).setDepth(9002);
 
-    // Player HP bar
-    this.playerHpBg  = this.add.rectangle(cx, cy - 22, 28, 4, 0x330000).setDepth(9001);
-    this.playerHpBar = this.add.rectangle(cx - 14, cy - 22, 28, 4, 0x00ff44).setOrigin(0, 0.5).setDepth(9002);
+    this.php  = ARMOR_DATA[STATE.armorLv].maxHp;
+    this.phm  = this.php;
+    this.pdef = ARMOR_DATA[STATE.armorLv].def;
+    this.patk = WEAPON_DATA[STATE.weaponLv].atk;
+    this.prng = WEAPON_DATA[STATE.weaponLv].range;
+    this.pspd = WEAPON_DATA[STATE.weaponLv].spd;
 
-    this.playerMaxHp = ARMOR_DATA[0].maxHp;
-    this.playerHp    = this.playerMaxHp;
-    this.playerDef   = ARMOR_DATA[0].def;
-    this.playerAtk   = WEAPON_DATA[0].atk;
-    this.attackRange = WEAPON_DATA[0].range;
-    this.collectRange = 65;
-
-    // Controls
     this.cursors = this.input.keyboard.createCursorKeys();
     this.wasd    = this.input.keyboard.addKeys('W,A,S,D');
 
-    // Camera — main viewport excludes HUD and panel
-    this.cameras.main.setBounds(0, 0, WW, WH);
-    this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
-    this.cameras.main.setViewport(0, HUD_H, GW, GH - HUD_H - PANEL_H);
+    this.cameras.main.setBounds(0,0,WW,WH);
+    this.cameras.main.startFollow(this.pl,true,0.11,0.11);
+    this.cameras.main.setViewport(0,HUD_H,GW,GH-HUD_H-PANEL_H);
 
-    // Timers
-    this.lastAttack  = 0;
-    this.lastCollect = 0;
-    this.lastRegen   = 0;
-    this.respawnQueue = [];
-
-    // Start UI
-    this.scene.launch('UIScene');
+    this.tAtk=0; this.tCol=0; this.tRgn=0; this.tSave=0; this.tAreaChk=0;
+    this.curArea=1;
+    this.lockMkrs=[];
+    this._makeLockMarkers();
   }
 
   // ── GROUND ──
-  _buildGround() {
-    const g = this.add.graphics();
-    // Base fill
-    g.fillStyle(0x2d5a1b);
-    g.fillRect(0, 0, WW, WH);
-    // Irregular patches for texture
-    const rng = new Phaser.Math.RandomDataGenerator(['forest42']);
-    for (let i = 0; i < 800; i++) {
-      const px = rng.between(0, WW), py = rng.between(0, WH);
-      const col = rng.pick([0x336622, 0x264d18, 0x3a6b22, 0x1e4010]);
-      g.fillStyle(col, 0.6);
-      g.fillEllipse(px, py, rng.between(40, 140), rng.between(30, 90));
+  _ground() {
+    const g=this.add.graphics();
+    g.fillStyle(0x180a28); g.fillRect(0,0,WW,WH);
+    const ac=[0x2a6018,0x154010,0x35281a,0x180a28];
+    for(let i=AREA_DATA.length-1;i>=0;i--){
+      g.fillStyle(ac[i]); g.fillCircle(CX,CY,AREA_DATA[i].r);
     }
+    const rng=new Phaser.Math.RandomDataGenerator(['gnd2']);
+    for(let i=0;i<1100;i++){
+      const px=rng.between(0,WW),py=rng.between(0,WH);
+      const dist=Math.hypot(px-CX,py-CY);
+      let c;
+      if(dist<900)       c=rng.pick([0x3a7020,0x266015,0x4a8028,0x2a5818]);
+      else if(dist<1700) c=rng.pick([0x1e5810,0x103808,0x266015,0x144008]);
+      else if(dist<2500) c=rng.pick([0x3d2d18,0x2d2010,0x4d3d28,0x221808]);
+      else               c=rng.pick([0x220f38,0x140620,0x301844,0x1a0828]);
+      g.fillStyle(c,0.55);
+      g.fillEllipse(px,py,rng.between(40,170),rng.between(28,110));
+    }
+    g.lineStyle(10,0x000000,0.85); g.strokeRect(5,5,WW-10,WH-10);
     g.setDepth(0);
   }
 
-  _buildBorder() {
-    const g = this.add.graphics();
-    g.lineStyle(8, 0x000000, 0.7);
-    g.strokeRect(4, 4, WW - 8, WH - 8);
-    g.setDepth(1);
+  _areaBorders() {
+    const g=this.add.graphics();
+    const borders=[
+      {r:900, col:0x44ff44,a:0.22},
+      {r:1700,col:0x8888ff,a:0.18},
+      {r:2500,col:0xff8844,a:0.18},
+    ];
+    borders.forEach(b=>{g.lineStyle(3,b.col,b.a); g.strokeCircle(CX,CY,b.r);});
+    g.setDepth(2);
+
+    // Area name labels
+    [
+      {name:'入門の森',dy:-820, col:'#aaffaa'},
+      {name:'深い森',  dy:-1550,col:'#aaaaff'},
+      {name:'山の麓',  dy:-2350,col:'#ffccaa'},
+      {name:'魔境',    dy:-3050,col:'#cc88ff'},
+    ].forEach(({name,dy,col})=>{
+      this.add.text(CX,CY+dy,name,{fontSize:'22px',fill:col,stroke:'#000',strokeThickness:4})
+        .setOrigin(0.5).setAlpha(0.55).setDepth(2);
+    });
   }
 
-  // ── SPAWN OBJECTS ──
-  _spawnTrees() {
-    const rng = new Phaser.Math.RandomDataGenerator(['tree_seed']);
-    for (let i = 0; i < 300; i++) {
-      const x = rng.between(80, WW - 80), y = rng.between(80, WH - 80);
-      if (Math.hypot(x - WW/2, y - WH/2) < 160) continue;
-      this.trees.push(new Tree(this, x, y));
+  _makeLockMarkers() {
+    const locks=[
+      {areaId:2,x:CX+940, y:CY, text:'🔒 拠点Lv2 で解放'},
+      {areaId:3,x:CX+1740,y:CY, text:'🔒 鉄の剣（武器Lv3）で解放'},
+      {areaId:4,x:CX+2540,y:CY, text:'🔒 銀の鎧（防具Lv4）で解放'},
+    ];
+    for(const lk of locks){
+      const bg=this.add.rectangle(lk.x,lk.y-28,190,34,0x000000,0.75).setDepth(12);
+      const t =this.add.text(lk.x,lk.y-28,lk.text,{fontSize:'11px',fill:'#ffaa44',stroke:'#000',strokeThickness:2}).setOrigin(0.5).setDepth(13);
+      this.lockMkrs.push({areaId:lk.areaId,bg,t});
     }
   }
 
-  _spawnRocks() {
-    const rng = new Phaser.Math.RandomDataGenerator(['rock_seed']);
-    for (let i = 0; i < 120; i++) {
-      const x = rng.between(80, WW - 80), y = rng.between(80, WH - 80);
-      if (Math.hypot(x - WW/2, y - WH/2) < 180) continue;
-      this.rocks.push(new Rock(this, x, y));
+  // ── BASE (spawn point marker) ──
+  _spawnBase() {
+    const g=this.add.graphics();
+    g.fillStyle(0x2244aa,0.35); g.fillCircle(CX,CY,60);
+    g.lineStyle(2,0x4488ff,0.5); g.strokeCircle(CX,CY,60);
+    g.setDepth(3);
+    this.add.text(CX,CY+80,'🏠 拠点',{fontSize:'14px',fill:'#88aaff',stroke:'#000',strokeThickness:3}).setOrigin(0.5).setDepth(4);
+  }
+
+  // ── RESOURCES ──
+  _resources() {
+    const rng=new Phaser.Math.RandomDataGenerator(['rsrc3']);
+    for(let i=0;i<480;i++){
+      const angle=rng.realInRange(0,Math.PI*2);
+      const r=rng.realInRange(90,3380);
+      const x=CX+Math.cos(angle)*r, y=CY+Math.sin(angle)*r;
+      if(x<65||x>WW-65||y<65||y>WH-65) continue;
+      if(Math.hypot(x-CX,y-CY)<130) continue;
+      const dist=Math.hypot(x-CX,y-CY);
+      const aid=dist<900?1:dist<1700?2:dist<2500?3:4;
+      const isRock=rng.frac()<(aid>=3?0.45:0.22);
+      if(isRock) this.rocks.push(new Rock(this,x,y,aid));
+      else       this.trees.push(new Tree(this,x,y,aid));
     }
   }
 
-  _spawnEnemies() {
-    // Area 1: slimes & rabbits
-    this._spawnEnemyGroup('slime', 20);
-    this._spawnEnemyGroup('rabbit', 15);
-    // Area 2
-    this._spawnEnemyGroup('bear', 8);
-    this._spawnEnemyGroup('wolf', 10);
-    // Area 3 — far corners
-    this._spawnEnemyGroup('boar', 6);
-  }
-
-  _spawnEnemyGroup(type, count) {
-    const rng = new Phaser.Math.RandomDataGenerator([type + count]);
-    for (let i = 0; i < count; i++) {
-      const x = rng.between(100, WW - 100), y = rng.between(100, WH - 100);
-      if (Math.hypot(x - WW/2, y - WH/2) < 200) continue;
-      this.enemies.push(new Enemy(this, type, x, y));
+  // ── ENEMIES ──
+  _spawnAll() {
+    for(const [type,def] of Object.entries(EDEFS)){
+      if(!areaUnlocked(def.area)) continue;
+      for(let i=0;i<def.max;i++) this._spawn(type);
     }
   }
 
-  // ── GOLD / DROP SPAWNING ──
-  spawnGold(x, y, amount) {
-    const count = Math.min(amount, 8);
-    for (let i = 0; i < count; i++) {
-      const angle = (i / count) * Math.PI * 2;
-      const r = 18 + Math.random() * 12;
-      const gx = x + Math.cos(angle) * r, gy = y + Math.sin(angle) * r;
-      const coin = this.add.circle(gx, gy, 5, 0xffd700);
-      coin.setDepth(500);
-      coin.goldValue = amount;
-      this.goldParticles.push(coin);
-      this.tweens.add({
-        targets: coin, y: gy - 20, duration: 300, ease: 'Quad.Out',
-        onComplete: () => { this.tweens.add({ targets: coin, y: gy, duration: 200 }); }
-      });
+  _spawn(type) {
+    const def=EDEFS[type], ai=def.area-1;
+    const inner=ai===0?140:AREA_DATA[ai-1].r+35;
+    const outer=AREA_DATA[ai].r-35;
+    for(let t=0;t<30;t++){
+      const angle=Math.random()*Math.PI*2;
+      const r=inner+Math.random()*(outer-inner);
+      const x=CX+Math.cos(angle)*r, y=CY+Math.sin(angle)*r;
+      if(x>65&&x<WW-65&&y>65&&y<WH-65){
+        this.enemies.push(new Enemy(this,type,x,y)); return;
+      }
     }
   }
 
-  spawnDrop(x, y, type) {
-    const colors = { meat: 0xff6666, skin: 0xcc9944, gem: 0x9944ff };
-    const labels = { meat: '肉', skin: '皮', gem: '魔石' };
-    floatText(this, x, y - 20, `+1 ${labels[type]}`, '#ffaaaa');
-    STATE[type] = (STATE[type] || 0) + 1;
+  // ── GOLD / DROPS ──
+  spawnGold(x,y,amount) {
+    const n=Math.min(Math.ceil(amount/3),7);
+    for(let i=0;i<n;i++){
+      const ang=(i/n)*Math.PI*2+Math.random()*0.5;
+      const r=16+Math.random()*14;
+      const cx=x+Math.cos(ang)*r, cy=y+Math.sin(ang)*r;
+      const coin=this.add.circle(cx,cy,5.5,0xffd700);
+      coin.setDepth(500).setStrokeStyle(1.2,0xaa8800);
+      coin.goldAmt=amount;
+      this.coins.push(coin);
+      this.tweens.add({targets:coin,y:cy-24,duration:270,ease:'Quad.Out',
+        onComplete:()=>this.tweens.add({targets:coin,y:cy,duration:200,ease:'Bounce.Out'})});
+    }
+  }
+
+  onEnemyDied(e) {
+    STATE.gold+=e.d.gold; STATE.totalGold+=e.d.gold; STATE.kills++;
+    this.spawnGold(e.px,e.py,e.d.gold);
+    if(e.d.drop){
+      STATE[e.d.drop]=(STATE[e.d.drop]||0)+1;
+      const label={meat:'🥩 肉',skin:'🫧 皮',gem:'💎 魔石'};
+      floatTxt(this,e.px,e.py-18,`+1 ${label[e.d.drop]||e.d.drop}`,'#ffaaaa');
+    }
+    // Queue respawn
+    if(areaUnlocked(e.d.area)){
+      this.enemyQ.push({type:e.type,at:this.time.now+e.d.rsec*1000});
+    }
+  }
+
+  // ── PARTICLES ──
+  _particles(x,y,col=0xff4400,n=5) {
+    for(let i=0;i<n;i++){
+      const ang=Math.random()*Math.PI*2, spd=45+Math.random()*65;
+      const p=this.add.circle(x,y,2.5+Math.random()*2.5,col,0.9).setDepth(8000);
+      this.tweens.add({targets:p,x:p.x+Math.cos(ang)*spd,y:p.y+Math.sin(ang)*spd,alpha:0,duration:340,onComplete:()=>p.destroy()});
+    }
   }
 
   // ── PLAYER MOVEMENT ──
-  _movePlayer() {
-    const spd = 155;
-    let vx = 0, vy = 0;
-    const k = this.wasd, c = this.cursors;
-    if (k.A.isDown || c.left.isDown)  vx -= spd;
-    if (k.D.isDown || c.right.isDown) vx += spd;
-    if (k.W.isDown || c.up.isDown)    vy -= spd;
-    if (k.S.isDown || c.down.isDown)  vy += spd;
-    if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707; }
-    this.player.body.setVelocity(vx, vy);
+  _move() {
+    const spd=160;
+    let vx=0, vy=0;
+    const k=this.wasd, c=this.cursors;
+    if(k.A.isDown||c.left.isDown)  vx-=spd;
+    if(k.D.isDown||c.right.isDown) vx+=spd;
+    if(k.W.isDown||c.up.isDown)    vy-=spd;
+    if(k.S.isDown||c.down.isDown)  vy+=spd;
+    if(vx&&vy){vx*=0.707;vy*=0.707;}
+    this.pl.body.setVelocity(vx,vy);
 
-    const px = this.player.x, py = this.player.y;
-    this.player.setDepth(py + 50);
-    this.playerShadow.setPosition(px, py + 22);
-    this.playerShadow.setDepth(py + 49);
-    this.playerLabel.setPosition(px, py - 28).setDepth(py + 100);
-    this.playerHpBg.setPosition(px, py - 22).setDepth(py + 101);
-    const ratio = Math.max(0, this.playerHp / this.playerMaxHp);
-    this.playerHpBar.setPosition(px - 14, py - 22).setSize(28 * ratio, 4).setDepth(py + 102);
+    const x=this.pl.x, y=this.pl.y;
+    this.pl.setDepth(y+50);
+    this.pSh.setPosition(x,y+22).setDepth(y+49);
+    this.pLbl.setPosition(x,y-28).setDepth(y+100);
+    this.pHbg.setPosition(x,y-22).setDepth(y+101);
+    const ratio=Math.max(0,this.php/this.phm);
+    this.pHbr.setPosition(x-15,y-22).setSize(30*ratio,5).setDepth(y+102);
+    const hcol=ratio>0.5?0x22ff66:ratio>0.25?0xffcc00:0xff3300;
+    this.pHbr.setFillStyle(hcol);
   }
 
-  // ── AUTO-ATTACK ──
-  _autoAttack(time) {
-    const atkInterval = 700;
-    if (time - this.lastAttack < atkInterval) return;
-    const px = this.player.x, py = this.player.y;
-    let nearest = null, nearDist = this.attackRange;
-    for (const e of this.enemies) {
-      if (!e.alive) continue;
-      const dist = Math.hypot(e.phys.x - px, e.phys.y - py);
-      if (dist < nearDist) { nearDist = dist; nearest = e; }
+  // ── AUTO ATTACK ──
+  _attack(time) {
+    if(time-this.tAtk<this.pspd) return;
+    const px=this.pl.x, py=this.pl.y;
+    let best=null, bd=this.prng;
+    for(const e of this.enemies){
+      if(!e.alive) continue;
+      const d=Math.hypot(e.px-px,e.py-py);
+      if(d<bd){bd=d;best=e;}
     }
-    if (!nearest) return;
-    this.lastAttack = time;
-    const dmg = Math.max(1, this.playerAtk - nearest.data.def || 0);
-    nearest.takeDamage(dmg);
-    nearest.updateVisuals();
-    floatText(this, nearest.phys.x, nearest.phys.y - 20, `-${dmg}`, '#ff4444');
+    if(!best) return;
+    this.tAtk=time;
+    const dmg=Math.max(1,this.patk-(best.d.def||0));
+    best.hit(dmg);
+    best.sync();
+    floatTxt(this,best.px,best.py-22,`-${dmg}`,'#ff5555');
+    this._particles(best.px,best.py,0xff4400,5);
 
-    // Attack line flash
-    const g = this.add.graphics();
-    g.lineStyle(2, 0xff8800, 0.8);
-    g.lineBetween(px, py, nearest.phys.x, nearest.phys.y);
-    g.setDepth(8000);
-    this.time.delayedCall(120, () => g.destroy());
+    const g=this.add.graphics();
+    g.lineStyle(2,0xff9900,0.7);
+    g.lineBetween(px,py,best.px,best.py);
+    g.setDepth(7999);
+    this.time.delayedCall(100,()=>g.destroy());
   }
 
-  // ── AUTO-COLLECT ──
-  _autoCollect(time) {
-    const collectInterval = 1400;
-    if (time - this.lastCollect < collectInterval) return;
-    const px = this.player.x, py = this.player.y;
-    const bonus = BASE_DATA[STATE.baseLv].bonus;
-    const range = this.collectRange * bonus;
+  // ── AUTO COLLECT ──
+  _collect(time) {
+    if(time-this.tCol<1250) return;
+    const px=this.pl.x, py=this.pl.y;
+    const bonus=BASE_DATA[STATE.baseLv].bonus;
+    const range=65*bonus;
+
+    // Coins
+    const toRm=this.coins.filter(c=>Math.hypot(c.x-px,c.y-py)<62);
+    if(toRm.length){
+      const total=toRm.reduce((s,c)=>s+(c.goldAmt||0),0);
+      toRm.forEach(c=>{c.destroy();this.coins.splice(this.coins.indexOf(c),1);});
+      floatTxt(this,px,py-38,`+${total}G`,'#ffd700');
+      this.tCol=time; return;
+    }
 
     // Trees
-    for (const t of this.trees) {
-      if (t.depleted) continue;
-      const dist = Math.hypot(t.x - px, t.y - py);
-      if (dist < range) {
-        const got = Math.max(1, Math.round(1 * bonus));
-        STATE.wood += got;
-        t.wood -= got;
-        floatText(this, t.x, t.y - 30, `木 +${got}`, '#88ff88');
-        if (t.wood <= 0) {
-          t.setDepleted(true);
-          const respawn = { obj: t, at: time + 12000 };
-          this.respawnQueue.push(respawn);
-        }
-        this.lastCollect = time;
-        return;
+    for(const t of this.trees){
+      if(t.depleted||!areaUnlocked(t.areaId)) continue;
+      if(Math.hypot(t.x-px,t.y-py)<range){
+        const got=Math.max(1,Math.round(bonus));
+        STATE.wood+=got; t.wood-=got;
+        floatTxt(this,t.x,t.y-32,`🌲 +${got}`,'#88ff88');
+        if(t.wood<=0){t.setDepleted(true);this.respawnQ.push({obj:t,at:time+14000});}
+        this.tCol=time; return;
       }
     }
 
     // Rocks
-    for (const r of this.rocks) {
-      if (r.depleted) continue;
-      const dist = Math.hypot(r.x - px, r.y - py);
-      if (dist < range) {
-        STATE.stone = (STATE.stone || 0) + 1;
-        r.stone -= 1;
-        floatText(this, r.x, r.y - 30, '石 +1', '#bbbbff');
-        if (r.stone <= 0) r.setDepleted(true);
-        this.lastCollect = time;
-        return;
+    for(const r of this.rocks){
+      if(r.depleted||!areaUnlocked(r.areaId)) continue;
+      if(Math.hypot(r.x-px,r.y-py)<range){
+        STATE.stone=(STATE.stone||0)+1; r.stone--;
+        floatTxt(this,r.x,r.y-32,'🪨 +1','#bbbbff');
+        if(r.stone<=0) r.setDepleted(true);
+        this.tCol=time; return;
       }
-    }
-
-    // Gold coins
-    const toRemove = [];
-    for (const coin of this.goldParticles) {
-      const dist = Math.hypot(coin.x - px, coin.y - py);
-      if (dist < 50) {
-        toRemove.push(coin);
-        floatText(this, coin.x, coin.y - 10, `+${coin.goldValue}G`, '#ffd700');
-      }
-    }
-    if (toRemove.length > 0) {
-      toRemove.forEach(c => { c.destroy(); this.goldParticles.splice(this.goldParticles.indexOf(c), 1); });
-      this.lastCollect = time;
     }
   }
 
   // ── ENEMY AI ──
-  _updateEnemies(time, delta) {
-    const px = this.player.x, py = this.player.y;
-    for (const e of this.enemies) {
-      if (!e.alive) { e.updateVisuals(); continue; }
-
-      const dist = Math.hypot(e.phys.x - px, e.phys.y - py);
-      const spd = e.spd;
-
-      if (dist < e.aggroRange) {
-        // Chase player
-        const angle = Math.atan2(py - e.phys.y, px - e.phys.x);
-        e.phys.body.setVelocity(Math.cos(angle) * spd, Math.sin(angle) * spd);
-
-        // Attack player
-        if (dist < 40 && time - e.attackCooldown > 1200) {
-          e.attackCooldown = time;
-          const dmg = Math.max(1, e.atk - this.playerDef);
-          this.playerHp = Math.max(0, this.playerHp - dmg);
-          floatText(this, px, py - 30, `-${dmg}`, '#ff2200');
-          if (this.playerHp <= 0) this._playerDead();
+  _enemies(time,delta) {
+    const px=this.pl.x, py=this.pl.y;
+    for(const e of this.enemies){
+      if(!e.alive){e.sync();continue;}
+      const dist=Math.hypot(e.px-px,e.py-py);
+      if(dist<e.d.aggro){
+        const ang=Math.atan2(py-e.py,px-e.px);
+        e.ph.body.setVelocity(Math.cos(ang)*e.d.spd,Math.sin(ang)*e.d.spd);
+        if(dist<44&&time-e.atkCd>1100){
+          e.atkCd=time;
+          const dmg=Math.max(1,e.d.atk-this.pdef);
+          this.php=Math.max(0,this.php-dmg);
+          floatTxt(this,px,py-32,`-${dmg}`,'#ff2200');
+          shake(this,0.004+dmg*0.00015,120);
+          if(this.php<=0) this._dead();
         }
       } else {
-        // Wander
-        e.wanderTimer -= delta;
-        if (e.wanderTimer <= 0) {
-          e.wanderTimer = Phaser.Math.Between(1500, 3500);
-          e.wanderAngle = Math.random() * Math.PI * 2;
-        }
-        e.phys.body.setVelocity(
-          Math.cos(e.wanderAngle) * spd * 0.4,
-          Math.sin(e.wanderAngle) * spd * 0.4
-        );
+        e.wanderT-=delta;
+        if(e.wanderT<=0){e.wanderT=Phaser.Math.Between(1500,4000);e.wanderA=Math.random()*Math.PI*2;}
+        e.ph.body.setVelocity(Math.cos(e.wanderA)*e.d.spd*0.33,Math.sin(e.wanderA)*e.d.spd*0.33);
       }
-
-      e.updateVisuals();
+      e.sync();
     }
-    // Clean dead
-    for (let i = this.enemies.length - 1; i >= 0; i--) {
-      if (!this.enemies[i].alive && !this.enemies[i].sprite.active) {
-        this.enemies.splice(i, 1);
-      }
+    // prune dead
+    for(let i=this.enemies.length-1;i>=0;i--){
+      if(!this.enemies[i].alive&&!this.enemies[i].sp?.active) this.enemies.splice(i,1);
     }
   }
 
-  _respawnTrees(time) {
-    for (let i = this.respawnQueue.length - 1; i >= 0; i--) {
-      const r = this.respawnQueue[i];
-      if (time >= r.at) {
-        r.obj.wood = Phaser.Math.Between(3, 8);
-        r.obj.setDepleted(false);
-        this.respawnQueue.splice(i, 1);
+  // ── RESPAWNS ──
+  _respawns(time) {
+    for(let i=this.respawnQ.length-1;i>=0;i--){
+      if(time>=this.respawnQ[i].at){
+        const t=this.respawnQ[i].obj;
+        t.wood=t.woodMax; t.setDepleted(false);
+        this.respawnQ.splice(i,1);
+      }
+    }
+    for(let i=this.enemyQ.length-1;i>=0;i--){
+      if(time>=this.enemyQ[i].at){
+        const {type}=this.enemyQ[i];
+        const cnt=this.enemies.filter(e=>e.type===type&&e.alive).length;
+        if(cnt<EDEFS[type].max) this._spawn(type);
+        this.enemyQ.splice(i,1);
       }
     }
   }
 
-  _regenHp(time) {
-    const interval = BASE_DATA[STATE.baseLv].bonus >= 1.5 ? 3000 : 8000;
-    if (time - this.lastRegen > interval) {
-      this.lastRegen = time;
-      const regen = Math.round(this.playerMaxHp * 0.02);
-      this.playerHp = Math.min(this.playerMaxHp, this.playerHp + regen);
+  // ── HP REGEN ──
+  _regen(time) {
+    const interval=Math.round(6500/BASE_DATA[STATE.baseLv].regen);
+    if(time-this.tRgn>interval){
+      this.tRgn=time;
+      this.php=Math.min(this.phm,this.php+Math.round(this.phm*0.015));
     }
   }
 
-  _playerDead() {
-    this.playerHp = this.playerMaxHp;
-    this.player.setPosition(WW / 2, WH / 2);
-    floatText(this, WW / 2, WH / 2 - 60, '気絶！拠点に戻る...', '#ff8800');
+  // ── AREA CHECK ──
+  _areaCheck(time) {
+    if(time-this.tAreaChk<500) return;
+    this.tAreaChk=time;
+    const dist=Math.hypot(this.pl.x-CX,this.pl.y-CY);
+    const na=distToArea(dist);
+
+    if(na!==this.curArea){
+      if(!areaUnlocked(na)){
+        // push back
+        const ang=Math.atan2(this.pl.y-CY,this.pl.x-CX);
+        const lim=AREA_DATA[na-1].r-70;
+        this.pl.setPosition(CX+Math.cos(ang)*lim,CY+Math.sin(ang)*lim);
+        floatTxt(this,this.pl.x,this.pl.y-55,'🔒 エリア未解放！','#ff8844');
+      } else {
+        this.curArea=na;
+        const banner=AREA_DATA[na-1];
+        const t=this.add.text(this.pl.x,this.pl.y-90,`エリア: ${banner.name}`,{
+          fontSize:'20px',fill:'#ffffff',stroke:'#000',strokeThickness:4,
+          backgroundColor:'#00000066',padding:{x:12,y:6}
+        }).setOrigin(0.5).setDepth(9500);
+        this.tweens.add({targets:t,y:t.y-40,alpha:0,duration:2500,delay:1000,onComplete:()=>t.destroy()});
+      }
+    }
+
+    // update lock markers
+    for(const m of this.lockMkrs){
+      const v=!areaUnlocked(m.areaId);
+      m.bg.setVisible(v); m.t.setVisible(v);
+    }
   }
 
-  // ── APPLY UPGRADES (called from UIScene) ──
-  applyWeaponUpgrade() {
-    const lv = STATE.weaponLv;
-    this.playerAtk   = WEAPON_DATA[lv].atk;
-    this.attackRange = WEAPON_DATA[lv].range;
+  // ── UNLOCK AREA ──
+  unlockArea(id) {
+    if(areaUnlocked(id)) return;
+    STATE.areas.push(id);
+    // spawn enemies
+    for(const [type,def] of Object.entries(EDEFS)){
+      if(def.area===id) for(let i=0;i<def.max;i++) this._spawn(type);
+    }
+    const name=AREA_DATA[id-1].name;
+    floatTxt(this,this.pl.x,this.pl.y-70,`🗺 エリア${id}「${name}」解放！`,'#44ffff');
+    shake(this,0.009,280);
   }
 
-  applyArmorUpgrade() {
-    const lv = STATE.armorLv;
-    const prev = this.playerMaxHp;
-    this.playerMaxHp = ARMOR_DATA[lv].maxHp;
-    this.playerDef   = ARMOR_DATA[lv].def;
-    this.playerHp    = Math.min(this.playerHp + (this.playerMaxHp - prev), this.playerMaxHp);
+  // ── PLAYER DEAD ──
+  _dead() {
+    this.php=Math.round(this.phm*0.3);
+    this.pl.setPosition(CX,CY);
+    floatTxt(this,CX,CY-65,'💀 気絶！拠点へ帰還...','#ff8800');
+    shake(this,0.016,320);
   }
 
-  update(time, delta) {
-    this._movePlayer();
-    this._autoAttack(time);
-    this._autoCollect(time);
-    this._updateEnemies(time, delta);
-    this._respawnTrees(time);
-    this._regenHp(time);
+  // ── APPLY UPGRADES ──
+  applyWeapon() {
+    const d=WEAPON_DATA[STATE.weaponLv];
+    this.patk=d.atk; this.prng=d.range; this.pspd=d.spd;
+  }
+  applyArmor() {
+    const prev=this.phm, d=ARMOR_DATA[STATE.armorLv];
+    this.phm=d.maxHp; this.pdef=d.def;
+    this.php=Math.min(this.php+(d.maxHp-prev),d.maxHp);
+  }
+
+  // ── AUTO SAVE ──
+  _autoSave(time) {
+    if(time-this.tSave>30000){
+      this.tSave=time; STATE.playTime=(STATE.playTime||0)+30; save();
+    }
+  }
+
+  update(time,delta) {
+    this._move();
+    this._attack(time);
+    this._collect(time);
+    this._enemies(time,delta);
+    this._respawns(time);
+    this._regen(time);
+    this._areaCheck(time);
+    this._autoSave(time);
   }
 }
 
-// ─────────────────────────────────────────────
+// ═══════════════════════════════════════════
 // UI SCENE
-// ─────────────────────────────────────────────
+// ═══════════════════════════════════════════
 class UIScene extends Phaser.Scene {
-  constructor() { super({ key: 'UIScene' }); }
+  constructor(){super({key:'UIScene'});}
 
   create() {
-    this.cameras.main.setViewport(0, 0, GW, GH);
-    this._buildHUD();
-    this._buildPanel();
-    this._buildUpgradeButtons();
+    this.cameras.main.setViewport(0,0,GW,GH);
+    this._hud();
+    this._panel();
+    this._minimap();
   }
 
-  _buildHUD() {
-    // Background bar
-    this.add.rectangle(GW / 2, HUD_H / 2, GW, HUD_H, 0x0a1a05, 0.92).setScrollFactor(0).setDepth(1000);
-    this.add.rectangle(GW / 2, HUD_H, GW, 2, 0x44aa44, 0.6).setScrollFactor(0).setDepth(1001);
+  _hud() {
+    this.add.rectangle(GW/2,HUD_H/2,GW,HUD_H,0x060e04,0.95).setScrollFactor(0).setDepth(1000);
+    this.add.rectangle(GW/2,HUD_H,GW,2,0x336633,0.55).setScrollFactor(0).setDepth(1001);
 
-    // HP label
-    this.add.text(12, 8, 'HP', { fontSize: '12px', fill: '#aaffaa' }).setScrollFactor(0).setDepth(1002);
-    this.hpBg  = this.add.rectangle(13, 26, 180, 16, 0x330a0a).setOrigin(0, 0.5).setScrollFactor(0).setDepth(1002);
-    this.hpBar = this.add.rectangle(13, 26, 180, 16, 0x22cc55).setOrigin(0, 0.5).setScrollFactor(0).setDepth(1003);
-
-    // HP text
-    this.hpText = this.add.text(103, 26, '', { fontSize: '11px', fill: '#ffffff', stroke: '#000', strokeThickness: 2 })
+    this.add.text(10,7,'HP',{fontSize:'11px',fill:'#aaffaa',fontStyle:'bold'}).setScrollFactor(0).setDepth(1002);
+    this.hpBg  = this.add.rectangle(12,28,184,18,0x330a0a).setOrigin(0,0.5).setScrollFactor(0).setDepth(1002);
+    this.hpBar = this.add.rectangle(12,28,184,18,0x22cc55).setOrigin(0,0.5).setScrollFactor(0).setDepth(1003);
+    this.hpTxt = this.add.text(104,28,'',{fontSize:'11px',fill:'#fff',stroke:'#000',strokeThickness:2})
       .setOrigin(0.5).setScrollFactor(0).setDepth(1004);
 
-    // Gold / resources
-    this.goldText = this.add.text(210, 8, '', { fontSize: '14px', fill: '#ffd700', stroke: '#000', strokeThickness: 2 })
-      .setScrollFactor(0).setDepth(1002);
-    this.woodText = this.add.text(340, 8, '', { fontSize: '13px', fill: '#88ff88', stroke: '#000', strokeThickness: 2 })
-      .setScrollFactor(0).setDepth(1002);
-    this.resourceText = this.add.text(460, 8, '', { fontSize: '12px', fill: '#ccccff', stroke: '#000', strokeThickness: 2 })
-      .setScrollFactor(0).setDepth(1002);
+    this.gldTxt = this.add.text(208,5, '',{fontSize:'14px',fill:'#ffd700',stroke:'#000',strokeThickness:2}).setScrollFactor(0).setDepth(1002);
+    this.wdTxt  = this.add.text(310,5, '',{fontSize:'13px',fill:'#88ff88',stroke:'#000',strokeThickness:2}).setScrollFactor(0).setDepth(1002);
+    this.resTxt = this.add.text(208,29,'',{fontSize:'11px',fill:'#ccccff',stroke:'#000',strokeThickness:2}).setScrollFactor(0).setDepth(1002);
+    this.gearTx = this.add.text(208,43,'',{fontSize:'10px',fill:'#ff9944'}).setScrollFactor(0).setDepth(1002);
+    this.staTxt = this.add.text(GW-170,5,'',{fontSize:'11px',fill:'#888888'}).setScrollFactor(0).setDepth(1002);
 
-    // Area & kills
-    this.statsText = this.add.text(GW - 10, 8, '', { fontSize: '11px', fill: '#aaaaaa', align: 'right' })
-      .setOrigin(1, 0).setScrollFactor(0).setDepth(1002);
-
-    // Weapon name indicator
-    this.weaponLabel = this.add.text(210, 30, '', { fontSize: '11px', fill: '#ff9944' })
-      .setScrollFactor(0).setDepth(1002);
-  }
-
-  _buildPanel() {
-    const py = GH - PANEL_H / 2;
-    this.add.rectangle(GW / 2, py, GW, PANEL_H, 0x0a1505, 0.93).setScrollFactor(0).setDepth(1000);
-    this.add.rectangle(GW / 2, GH - PANEL_H, GW, 2, 0x44aa44, 0.5).setScrollFactor(0).setDepth(1001);
-  }
-
-  _buildUpgradeButtons() {
-    const btnY = GH - PANEL_H / 2;
-    const btnW = 170, btnH = 44, gap = 18;
-    const totalW = btnW * 3 + gap * 2;
-    const startX = (GW - totalW) / 2 + btnW / 2;
-
-    this._makeBtn(startX,              btnY, btnW, btnH, '⚔ 武器アップ',  0x331a00, 0xff8833, 'weapon');
-    this._makeBtn(startX + btnW + gap, btnY, btnW, btnH, '🛡 防具アップ',  0x001a33, 0x3399ff, 'armor');
-    this._makeBtn(startX + (btnW + gap) * 2, btnY, btnW, btnH, '🏠 拠点アップ', 0x001a00, 0x44ff44, 'base');
-  }
-
-  _makeBtn(x, y, w, h, label, bgCol, borderCol, tag) {
-    const bg = this.add.rectangle(x, y, w, h, bgCol, 0.95)
-      .setScrollFactor(0).setDepth(1005).setStrokeStyle(2, borderCol);
-    const txt = this.add.text(x, y - 6, label, { fontSize: '13px', fill: '#ffffff', stroke: '#000', strokeThickness: 2 })
+    // Save button
+    const sbg=this.add.rectangle(GW-42,HUD_H-14,64,22,0x1a3a1a,0.92)
+      .setScrollFactor(0).setDepth(1005).setStrokeStyle(1,0x44aa44).setInteractive({useHandCursor:true});
+    const st=this.add.text(GW-42,HUD_H-14,'💾 Save',{fontSize:'10px',fill:'#88ff88'})
       .setOrigin(0.5).setScrollFactor(0).setDepth(1006);
-    const sub = this.add.text(x, y + 10, '', { fontSize: '11px', fill: '#cccccc' })
-      .setOrigin(0.5).setScrollFactor(0).setDepth(1006);
-
-    bg.setInteractive({ useHandCursor: true });
-    bg.on('pointerover',  () => bg.setFillStyle(bgCol + 0x111111));
-    bg.on('pointerout',   () => bg.setFillStyle(bgCol, 0.95));
-    bg.on('pointerdown',  () => this._onUpgrade(tag, txt, sub, bg));
-
-    // Store references for update
-    this[`${tag}SubText`] = sub;
-    this[`${tag}Btn`] = bg;
-
-    return { bg, txt, sub };
+    sbg.on('pointerdown',()=>{save();st.setText('✅ Saved!');this.time.delayedCall(1600,()=>st.setText('💾 Save'));});
+    sbg.on('pointerover',()=>sbg.setAlpha(0.7));
+    sbg.on('pointerout', ()=>sbg.setAlpha(1));
   }
 
-  _onUpgrade(tag, txt, sub, bg) {
-    const game = this.scene.get('GameScene');
+  _panel() {
+    const py=GH-PANEL_H/2;
+    this.add.rectangle(GW/2,py,GW,PANEL_H,0x060e04,0.95).setScrollFactor(0).setDepth(1000);
+    this.add.rectangle(GW/2,GH-PANEL_H,GW,2,0x336633,0.55).setScrollFactor(0).setDepth(1001);
 
-    if (tag === 'weapon') {
-      const next = STATE.weaponLv + 1;
-      if (next >= WEAPON_DATA.length) return;
-      const cost = WEAPON_DATA[next].cost;
-      if (STATE.gold < cost) { floatBtnError(this, bg, '金貨が足りない！'); return; }
-      STATE.gold -= cost;
-      STATE.weaponLv = next;
-      game.applyWeaponUpgrade();
-      floatText(game, game.player.x, game.player.y - 50, `武器: ${WEAPON_DATA[next].name}`, '#ff9944');
+    const bW=165,bH=48,gap=14,bY=GH-PANEL_H/2;
+    const total=bW*3+gap*2;
+    const sx=(GW-total)/2+bW/2;
+    this._btn(sx,           bY,bW,bH,'⚔ 武器アップ',0x2a1000,0xff8833,'weapon');
+    this._btn(sx+bW+gap,    bY,bW,bH,'🛡 防具アップ',0x001028,0x3399ff,'armor');
+    this._btn(sx+(bW+gap)*2,bY,bW,bH,'🏠 拠点アップ',0x001400,0x44ff44,'base');
+  }
+
+  _btn(x,y,w,h,label,bgc,brc,tag) {
+    const bg=this.add.rectangle(x,y,w,h,bgc,0.97).setScrollFactor(0).setDepth(1005).setStrokeStyle(2,brc);
+    const tx=this.add.text(x,y-8,label,{fontSize:'13px',fill:'#fff',stroke:'#000',strokeThickness:2})
+      .setOrigin(0.5).setScrollFactor(0).setDepth(1006);
+    const sb=this.add.text(x,y+10,'',{fontSize:'10px',fill:'#cccccc'})
+      .setOrigin(0.5).setScrollFactor(0).setDepth(1006);
+    bg.setInteractive({useHandCursor:true});
+    bg.on('pointerover',()=>bg.setAlpha(0.75));
+    bg.on('pointerout', ()=>bg.setAlpha(1));
+    bg.on('pointerdown',()=>this._upgrade(tag,bg,x,y));
+    this[`${tag}Sub`]=sb;
+    this[`${tag}Bg`]=bg;
+  }
+
+  _upgrade(tag,bg,bx,by) {
+    const gs=this.scene.get('GameScene');
+
+    if(tag==='weapon'){
+      const n=STATE.weaponLv+1;
+      if(n>=WEAPON_DATA.length) return;
+      if(STATE.gold<WEAPON_DATA[n].cost){this._err(bg,bx,by);return;}
+      STATE.gold-=WEAPON_DATA[n].cost; STATE.weaponLv=n;
+      gs.applyWeapon();
+      floatTxt(gs,gs.pl.x,gs.pl.y-55,`⚔ ${WEAPON_DATA[n].name}`,'#ff9944');
+      if(n>=2) gs.unlockArea(3);
     }
 
-    if (tag === 'armor') {
-      const next = STATE.armorLv + 1;
-      if (next >= ARMOR_DATA.length) return;
-      const cost = ARMOR_DATA[next].cost;
-      if (STATE.gold < cost) { floatBtnError(this, bg, '金貨が足りない！'); return; }
-      STATE.gold -= cost;
-      STATE.armorLv = next;
-      game.applyArmorUpgrade();
-      floatText(game, game.player.x, game.player.y - 50, `防具: ${ARMOR_DATA[next].name}`, '#3399ff');
+    if(tag==='armor'){
+      const n=STATE.armorLv+1;
+      if(n>=ARMOR_DATA.length) return;
+      if(STATE.gold<ARMOR_DATA[n].cost){this._err(bg,bx,by);return;}
+      STATE.gold-=ARMOR_DATA[n].cost; STATE.armorLv=n;
+      gs.applyArmor();
+      floatTxt(gs,gs.pl.x,gs.pl.y-55,`🛡 ${ARMOR_DATA[n].name}`,'#3399ff');
+      if(n>=3) gs.unlockArea(4);
     }
 
-    if (tag === 'base') {
-      const next = STATE.baseLv + 1;
-      if (next >= BASE_DATA.length) return;
-      const bd = BASE_DATA[next];
-      if (STATE.gold < bd.goldCost || STATE.wood < bd.woodCost) {
-        floatBtnError(this, bg, '素材が足りない！'); return;
-      }
-      STATE.gold -= bd.goldCost;
-      STATE.wood -= bd.woodCost;
-      STATE.baseLv = next;
-      floatText(game, game.player.x, game.player.y - 50, `拠点: ${bd.name}`, '#44ff44');
+    if(tag==='base'){
+      const n=STATE.baseLv+1;
+      if(n>=BASE_DATA.length) return;
+      const bd=BASE_DATA[n];
+      if(STATE.gold<bd.goldCost||STATE.wood<bd.woodCost){this._err(bg,bx,by);return;}
+      STATE.gold-=bd.goldCost; STATE.wood-=bd.woodCost; STATE.baseLv=n;
+      floatTxt(gs,gs.pl.x,gs.pl.y-55,`🏠 ${bd.name}`,'#44ff44');
+      if(n>=1) gs.unlockArea(2);
     }
+
+    this.tweens.add({targets:bg,scaleX:1.08,scaleY:1.08,duration:75,yoyo:true});
+  }
+
+  _err(bg,bx,by) {
+    this.tweens.add({targets:bg,alpha:0.25,duration:70,yoyo:true,repeat:2,onComplete:()=>bg.setAlpha(1)});
+    const t=this.add.text(bx,by-36,'素材が足りない！',{fontSize:'11px',fill:'#ff4444',stroke:'#000',strokeThickness:2})
+      .setOrigin(0.5).setScrollFactor(0).setDepth(2000);
+    this.tweens.add({targets:t,y:t.y-18,alpha:0,duration:900,onComplete:()=>t.destroy()});
+  }
+
+  // ── MINIMAP ──
+  _minimap() {
+    const MX=GW-92,MY=HUD_H+6,MW=82,MH=82;
+    this.mm={x:MX,y:MY,w:MW,h:MH};
+    this.add.rectangle(MX+MW/2,MY+MH/2,MW+4,MH+4,0x000000,0.82)
+      .setScrollFactor(0).setDepth(1010).setStrokeStyle(1.5,0x44aa44);
+    this.mmG=this.add.graphics().setScrollFactor(0).setDepth(1011);
+    this.add.text(MX+MW/2,MY+MH+4,'MAP',{fontSize:'8px',fill:'#446644'})
+      .setOrigin(0.5).setScrollFactor(0).setDepth(1011);
+  }
+
+  _drawMinimap() {
+    const gs=this.scene.get('GameScene');
+    if(!gs?.pl) return;
+    const {x:ox,y:oy,w:mw,h:mh}=this.mm;
+    const g=this.mmG; g.clear();
+    const sx=mw/WW, sy=mh/WH;
+
+    g.fillStyle(0x0a1505); g.fillRect(ox,oy,mw,mh);
+
+    // Area rings
+    const ac=[0x2a6018,0x154010,0x35281a,0x180a28];
+    for(let i=AREA_DATA.length-1;i>=0;i--){
+      g.fillStyle(ac[i]);
+      g.fillCircle(ox+CX*sx,oy+CY*sy,AREA_DATA[i].r*sx);
+    }
+
+    // Trees
+    g.fillStyle(0x22aa22,0.55);
+    for(const t of gs.trees){
+      if(!t.depleted) g.fillRect(ox+t.x*sx-0.5,oy+t.y*sy-0.5,1,1);
+    }
+
+    // Enemies
+    for(const e of gs.enemies){
+      if(!e.alive) continue;
+      g.fillStyle(e.d.col,0.85);
+      g.fillRect(ox+e.px*sx-1,oy+e.py*sy-1,2,2);
+    }
+
+    // Player
+    const ppx=ox+gs.pl.x*sx, ppy=oy+gs.pl.y*sy;
+    g.fillStyle(0xffffff); g.fillCircle(ppx,ppy,2.5);
+    g.lineStyle(1.5,0x4488ff,1); g.strokeCircle(ppx,ppy,3.8);
+
+    // Border
+    g.lineStyle(1,0x44aa44,0.55); g.strokeRect(ox,oy,mw,mh);
   }
 
   update() {
-    const game = this.scene.get('GameScene');
-    if (!game || !game.playerHp) return;
+    const gs=this.scene.get('GameScene');
+    if(!gs?.pl) return;
 
-    // HUD hp
-    const ratio = Math.max(0, game.playerHp / game.playerMaxHp);
-    this.hpBar.setSize(180 * ratio, 16);
-    const col = ratio > 0.5 ? 0x22cc55 : ratio > 0.25 ? 0xffaa00 : 0xff3300;
-    this.hpBar.setFillStyle(col);
-    this.hpText.setText(`${game.playerHp | 0} / ${game.playerMaxHp}`);
+    const ratio=Math.max(0,gs.php/gs.phm);
+    this.hpBar.setSize(184*ratio,18);
+    this.hpBar.setFillStyle(ratio>0.5?0x22cc55:ratio>0.25?0xffaa00:0xff3300);
+    this.hpTxt.setText(`${gs.php|0} / ${gs.phm}`);
 
-    // Resources
-    this.goldText.setText(`💰 ${STATE.gold}G`);
-    this.woodText.setText(`🌲 木${STATE.wood}`);
-    this.resourceText.setText(`🥩${STATE.meat || 0}  🫧${STATE.skin || 0}  💎${STATE.gem || 0}`);
-    this.statsText.setText(`撃破: ${STATE.kills}  エリア: ${STATE.areaUnlocked}`);
-    this.weaponLabel.setText(`⚔ ${WEAPON_DATA[STATE.weaponLv].name}  🛡 ${ARMOR_DATA[STATE.armorLv].name}`);
+    this.gldTxt.setText(`💰 ${STATE.gold}G`);
+    this.wdTxt.setText( `🌲 ${STATE.wood}`);
+    this.resTxt.setText(`🥩${STATE.meat||0}  🫧${STATE.skin||0}  💎${STATE.gem||0}  🪨${STATE.stone||0}`);
+    this.gearTx.setText(`⚔${WEAPON_DATA[STATE.weaponLv].name}  🛡${ARMOR_DATA[STATE.armorLv].name}`);
+    this.staTxt.setText(`撃破:${STATE.kills}  エリア:${gs.curArea}/4`);
 
-    // Button subtexts
-    const wNext = STATE.weaponLv + 1;
-    this.weaponSubText.setText(wNext < WEAPON_DATA.length
-      ? `${WEAPON_DATA[wNext].name} / ${WEAPON_DATA[wNext].cost}G`
-      : 'MAX');
+    const wn=STATE.weaponLv+1;
+    this.weaponSub.setText(wn<WEAPON_DATA.length?`${WEAPON_DATA[wn].name} / ${WEAPON_DATA[wn].cost}G`:'MAX');
+    const an=STATE.armorLv+1;
+    this.armorSub.setText(an<ARMOR_DATA.length?`${ARMOR_DATA[an].name} / ${ARMOR_DATA[an].cost}G`:'MAX');
+    const bn=STATE.baseLv+1;
+    if(bn<BASE_DATA.length){
+      const bd=BASE_DATA[bn];
+      this.baseSub.setText(`${bd.name} / ${bd.goldCost}G+木${bd.woodCost}`);
+    } else this.baseSub.setText('MAX');
 
-    const aNext = STATE.armorLv + 1;
-    this.armorSubText.setText(aNext < ARMOR_DATA.length
-      ? `${ARMOR_DATA[aNext].name} / ${ARMOR_DATA[aNext].cost}G`
-      : 'MAX');
-
-    const bNext = STATE.baseLv + 1;
-    this.baseSubText.setText(bNext < BASE_DATA.length
-      ? `${BASE_DATA[bNext].name} / ${BASE_DATA[bNext].goldCost}G+木${BASE_DATA[bNext].woodCost}`
-      : 'MAX');
+    this._drawMinimap();
   }
 }
 
-function floatBtnError(scene, btn, msg) {
-  scene.tweens.add({ targets: btn, x: btn.x + 5, duration: 50, yoyo: true, repeat: 3 });
-  const t = scene.add.text(btn.x, btn.y - 30, msg, { fontSize: '12px', fill: '#ff4444', stroke: '#000', strokeThickness: 2 })
-    .setOrigin(0.5).setScrollFactor(0).setDepth(2000);
-  scene.tweens.add({ targets: t, y: t.y - 20, alpha: 0, duration: 900, onComplete: () => t.destroy() });
-}
-
-// ─────────────────────────────────────────────
-// PHASER CONFIG
-// ─────────────────────────────────────────────
-const config = {
-  type: Phaser.AUTO,
-  width: GW,
-  height: GH,
-  parent: 'game-container',
-  backgroundColor: '#1a2e0a',
-  physics: {
-    default: 'arcade',
-    arcade: { gravity: { y: 0 }, debug: false },
-  },
-  scene: [GameScene, UIScene],
-};
-
-new Phaser.Game(config);
+// ═══════════════════════════════════════════
+// LAUNCH
+// ═══════════════════════════════════════════
+new Phaser.Game({
+  type:Phaser.AUTO, width:GW, height:GH, parent:'gc',
+  backgroundColor:'#060e04',
+  physics:{default:'arcade',arcade:{gravity:{y:0},debug:false}},
+  scene:[TitleScene,GameScene,UIScene],
+});
 </script>
 </body>
 </html>
