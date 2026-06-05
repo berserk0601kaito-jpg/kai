@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Forest Survival</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0d1117; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: 'Segoe UI', sans-serif; }
+#game-container canvas { display: block; }
+</style>
+</head>
+<body>
+<div id="game-container"></div>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+<script>
+// ─────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────
+const GW = 800, GH = 600;
+const WW = 4000, WH = 4000;
+const HUD_H = 52;
+const PANEL_H = 70;
+
+const WEAPON_DATA = [
+  { name: '木の棒',   atk: 10,  range: 80,  cost: 0    },
+  { name: '石の斧',   atk: 25,  range: 100, cost: 50   },
+  { name: '鉄の剣',   atk: 50,  range: 120, cost: 150  },
+  { name: '銀の剣',   atk: 100, range: 140, cost: 400  },
+  { name: '魔王の剣', atk: 220, range: 170, cost: 1000 },
+];
+
+const ARMOR_DATA = [
+  { name: '布の服',   maxHp: 100,  def: 0,   cost: 0    },
+  { name: '皮の鎧',   maxHp: 200,  def: 10,  cost: 80   },
+  { name: '鉄の鎧',   maxHp: 400,  def: 25,  cost: 200  },
+  { name: '銀の鎧',   maxHp: 800,  def: 50,  cost: 500  },
+  { name: '伝説の鎧', maxHp: 1600, def: 100, cost: 1500 },
+];
+
+const BASE_DATA = [
+  { name: '初期拠点', bonus: 1.0, goldCost: 0,   woodCost: 0   },
+  { name: 'Lv2 拠点', bonus: 1.2, goldCost: 100, woodCost: 100 },
+  { name: 'Lv3 拠点', bonus: 1.5, goldCost: 100, woodCost: 300 },
+  { name: 'Lv4 拠点', bonus: 2.0, goldCost: 200, woodCost: 500 },
+];
+
+const ENEMY_TYPES = {
+  slime:  { name: 'スライム', hp: 20,   atk: 3,   spd: 55,  aggro: 200, gold: 5,   drop: null,   col: 0x22cc77, w: 22, h: 20, area: 1 },
+  rabbit: { name: 'ウサギ',   hp: 15,   atk: 1,   spd: 95,  aggro: 160, gold: 3,   drop: 'meat', col: 0xffbbcc, w: 18, h: 16, area: 1 },
+  bear:   { name: 'クマ',     hp: 100,  atk: 20,  spd: 48,  aggro: 250, gold: 30,  drop: 'meat', col: 0x774400, w: 40, h: 36, area: 2 },
+  wolf:   { name: 'オオカミ', hp: 60,   atk: 15,  spd: 105, aggro: 200, gold: 20,  drop: 'skin', col: 0x556688, w: 30, h: 26, area: 2 },
+  boar:   { name: 'イノシシ', hp: 150,  atk: 30,  spd: 80,  aggro: 220, gold: 50,  drop: 'meat', col: 0x8b4513, w: 38, h: 28, area: 3 },
+  dragon: { name: 'ドラゴン', hp: 1000, atk: 100, spd: 60,  aggro: 350, gold: 300, drop: 'gem',  col: 0xcc2200, w: 70, h: 60, area: 4 },
+};
+
+// ─────────────────────────────────────────────
+// GAME STATE (shared between scenes)
+// ─────────────────────────────────────────────
+const STATE = {
+  gold: 0, wood: 0, meat: 0, skin: 0, gem: 0,
+  weaponLv: 0, armorLv: 0, baseLv: 0,
+  kills: 0, areaUnlocked: 1,
+};
+
+// ─────────────────────────────────────────────
+// HELPER: draw isometric-style shadow
+// ─────────────────────────────────────────────
+function addShadow(scene, x, y, rw, rh) {
+  const g = scene.add.graphics();
+  g.fillStyle(0x000000, 0.22);
+  g.fillEllipse(0, 0, rw * 1.4, rh * 0.55);
+  g.x = x; g.y = y + rh * 0.5 + 2;
+  return g;
+}
+
+// ─────────────────────────────────────────────
+// TREE CLASS
+// ─────────────────────────────────────────────
+class Tree {
+  constructor(scene, x, y) {
+    this.scene = scene;
+    this.x = x; this.y = y;
+    this.wood = Phaser.Math.Between(3, 8);
+    this.depleted = false;
+    this.respawnTime = 0;
+
+    this.shadow = addShadow(scene, x, y, 36, 48);
+    this.trunk = scene.add.rectangle(x, y + 16, 14, 22, 0x7a4f30);
+    this.canopy = scene.add.ellipse(x, y - 10, 50, 54, 0x2d7a2d);
+    this.canopyShade = scene.add.ellipse(x + 6, y - 6, 30, 32, 0x1f5c1f);
+
+    this.setDepth();
+    // physics body for overlap detection
+    this.body = scene.physics.add.existing(scene.add.rectangle(x, y, 40, 60, 0x000000, 0), true);
+    this.body.body.immovable = true;
+  }
+
+  setDepth() {
+    const d = this.y + 100;
+    this.shadow.setDepth(d - 1);
+    this.trunk.setDepth(d);
+    this.canopy.setDepth(d + 1);
+    this.canopyShade.setDepth(d + 2);
+    if (this.body) this.body.setDepth(d);
+  }
+
+  setDepleted(d) {
+    this.depleted = d;
+    const alpha = d ? 0.35 : 1;
+    this.trunk.setAlpha(alpha);
+    this.canopy.setAlpha(alpha);
+    this.canopyShade.setAlpha(alpha);
+  }
+
+  destroy() {
+    this.shadow.destroy();
+    this.trunk.destroy();
+    this.canopy.destroy();
+    this.canopyShade.destroy();
+    this.body.destroy();
+  }
+}
+
+// ─────────────────────────────────────────────
+// ROCK CLASS
+// ─────────────────────────────────────────────
+class Rock {
+  constructor(scene, x, y) {
+    this.scene = scene;
+    this.x = x; this.y = y;
+    this.stone = Phaser.Math.Between(2, 5);
+    this.depleted = false;
+
+    this.shadow = addShadow(scene, x, y, 42, 28);
+    this.base = scene.add.ellipse(x, y + 2, 46, 30, 0x888888);
+    this.top  = scene.add.ellipse(x - 4, y - 6, 32, 22, 0xaaaaaa);
+    this.shine = scene.add.ellipse(x - 8, y - 10, 10, 7, 0xdddddd);
+
+    this.setDepth();
+    this.body = scene.physics.add.existing(scene.add.rectangle(x, y, 42, 30, 0, 0), true);
+  }
+
+  setDepth() {
+    const d = this.y + 50;
+    this.shadow.setDepth(d - 1);
+    this.base.setDepth(d);
+    this.top.setDepth(d + 1);
+    this.shine.setDepth(d + 2);
+  }
+
+  setDepleted(d) {
+    this.depleted = d;
+    const alpha = d ? 0.3 : 1;
+    [this.base, this.top, this.shine].forEach(o => o.setAlpha(alpha));
+  }
+
+  destroy() {
+    [this.shadow, this.base, this.top, this.shine, this.body].forEach(o => o.destroy());
+  }
+}
+
+// ─────────────────────────────────────────────
+// ENEMY CLASS
+// ─────────────────────────────────────────────
+class Enemy {
+  constructor(scene, type, x, y) {
+    this.scene = scene;
+    this.type = type;
+    const d = ENEMY_TYPES[type];
+    this.data = d;
+    this.maxHp = d.hp;
+    this.hp = d.hp;
+    this.atk = d.atk;
+    this.spd = d.spd;
+    this.aggroRange = d.aggro;
+    this.gold = d.gold;
+    this.drop = d.drop;
+    this.alive = true;
+    this.attackCooldown = 0;
+    this.wanderTimer = 0;
+    this.wanderAngle = Math.random() * Math.PI * 2;
+
+    this.shadow = addShadow(scene, x, y, d.w, d.h);
+    this.sprite = scene.add.rectangle(x, y, d.w, d.h, d.col);
+    this.sprite.setStrokeStyle(1.5, Phaser.Display.Color.GetColor32(
+      ((d.col >> 16) & 0xff) * 0.6 | 0,
+      ((d.col >> 8) & 0xff) * 0.6 | 0,
+      (d.col & 0xff) * 0.6 | 0, 255));
+
+    // HP bar
+    this.hpBg   = scene.add.rectangle(x, y - d.h / 2 - 8, d.w, 5, 0x330000);
+    this.hpBar  = scene.add.rectangle(x - d.w / 2, y - d.h / 2 - 8, d.w, 5, 0xff3333);
+    this.hpBar.setOrigin(0, 0.5);
+
+    // physics
+    this.phys = scene.physics.add.existing(scene.add.rectangle(x, y, d.w, d.h, 0, 0));
+    this.phys.body.setCollideWorldBounds(true);
+
+    this.setDepth();
+  }
+
+  get x() { return this.phys.x; }
+  get y() { return this.phys.y; }
+
+  setDepth() {
+    const d = this.phys.y + 80;
+    this.shadow.setDepth(d - 1);
+    this.sprite.setDepth(d);
+    this.hpBg.setDepth(d + 10);
+    this.hpBar.setDepth(d + 11);
+  }
+
+  updateVisuals() {
+    const x = this.phys.x, y = this.phys.y;
+    const d = this.data;
+    this.sprite.setPosition(x, y);
+    this.shadow.setPosition(x, y + d.h * 0.5 + 2);
+    this.hpBg.setPosition(x, y - d.h / 2 - 8);
+    const ratio = Math.max(0, this.hp / this.maxHp);
+    this.hpBar.setPosition(x - d.w / 2, y - d.h / 2 - 8);
+    this.hpBar.setSize(d.w * ratio, 5);
+    this.setDepth();
+  }
+
+  takeDamage(dmg) {
+    this.hp -= dmg;
+    // flash
+    this.scene.tweens.add({ targets: this.sprite, alpha: 0.2, duration: 60, yoyo: true });
+    if (this.hp <= 0) this.die();
+  }
+
+  die() {
+    this.alive = false;
+    this.phys.body.enable = false;
+    this.scene.tweens.add({
+      targets: [this.sprite, this.hpBg, this.hpBar, this.shadow],
+      alpha: 0, duration: 300,
+      onComplete: () => this.destroy(),
+    });
+    this.scene.spawnGold(this.phys.x, this.phys.y, this.gold);
+    if (this.drop) this.scene.spawnDrop(this.phys.x, this.phys.y, this.drop);
+    STATE.gold += this.gold;
+    STATE.kills++;
+  }
+
+  destroy() {
+    [this.sprite, this.hpBg, this.hpBar, this.shadow, this.phys].forEach(o => { try { o.destroy(); } catch(e){} });
+  }
+}
+
+// ─────────────────────────────────────────────
+// FLOATING TEXT helper
+// ─────────────────────────────────────────────
+function floatText(scene, x, y, msg, color = '#ffff00') {
+  const t = scene.add.text(x, y, msg, { fontSize: '14px', fill: color, stroke: '#000', strokeThickness: 3 });
+  t.setOrigin(0.5);
+  t.setDepth(9999);
+  scene.tweens.add({ targets: t, y: y - 40, alpha: 0, duration: 900, onComplete: () => t.destroy() });
+}
+
+// ─────────────────────────────────────────────
+// MAIN GAME SCENE
+// ─────────────────────────────────────────────
+class GameScene extends Phaser.Scene {
+  constructor() { super({ key: 'GameScene' }); }
+
+  create() {
+    this.physics.world.setBounds(0, 0, WW, WH);
+
+    this._buildGround();
+    this._buildBorder();
+
+    this.trees   = [];
+    this.rocks   = [];
+    this.enemies = [];
+    this.goldParticles = [];
+    this.drops   = [];
+
+    this._spawnTrees();
+    this._spawnRocks();
+    this._spawnEnemies();
+
+    // Player
+    const cx = WW / 2, cy = WH / 2;
+    this.playerShadow = addShadow(this, cx, cy, 28, 38);
+    this.player = this.physics.add.existing(this.add.rectangle(cx, cy, 28, 38, 0x4488ff));
+    this.player.setDepth(cy);
+    this.player.body.setCollideWorldBounds(true);
+
+    // Player name tag
+    this.playerLabel = this.add.text(cx, cy - 28, 'YOU', {
+      fontSize: '10px', fill: '#ffffff', stroke: '#000', strokeThickness: 2
+    }).setOrigin(0.5).setDepth(9000);
+
+    // Player HP bar
+    this.playerHpBg  = this.add.rectangle(cx, cy - 22, 28, 4, 0x330000).setDepth(9001);
+    this.playerHpBar = this.add.rectangle(cx - 14, cy - 22, 28, 4, 0x00ff44).setOrigin(0, 0.5).setDepth(9002);
+
+    this.playerMaxHp = ARMOR_DATA[0].maxHp;
+    this.playerHp    = this.playerMaxHp;
+    this.playerDef   = ARMOR_DATA[0].def;
+    this.playerAtk   = WEAPON_DATA[0].atk;
+    this.attackRange = WEAPON_DATA[0].range;
+    this.collectRange = 65;
+
+    // Controls
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.wasd    = this.input.keyboard.addKeys('W,A,S,D');
+
+    // Camera — main viewport excludes HUD and panel
+    this.cameras.main.setBounds(0, 0, WW, WH);
+    this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
+    this.cameras.main.setViewport(0, HUD_H, GW, GH - HUD_H - PANEL_H);
+
+    // Timers
+    this.lastAttack  = 0;
+    this.lastCollect = 0;
+    this.lastRegen   = 0;
+    this.respawnQueue = [];
+
+    // Start UI
+    this.scene.launch('UIScene');
+  }
+
+  // ── GROUND ──
+  _buildGround() {
+    const g = this.add.graphics();
+    // Base fill
+    g.fillStyle(0x2d5a1b);
+    g.fillRect(0, 0, WW, WH);
+    // Irregular patches for texture
+    const rng = new Phaser.Math.RandomDataGenerator(['forest42']);
+    for (let i = 0; i < 800; i++) {
+      const px = rng.between(0, WW), py = rng.between(0, WH);
+      const col = rng.pick([0x336622, 0x264d18, 0x3a6b22, 0x1e4010]);
+      g.fillStyle(col, 0.6);
+      g.fillEllipse(px, py, rng.between(40, 140), rng.between(30, 90));
+    }
+    g.setDepth(0);
+  }
+
+  _buildBorder() {
+    const g = this.add.graphics();
+    g.lineStyle(8, 0x000000, 0.7);
+    g.strokeRect(4, 4, WW - 8, WH - 8);
+    g.setDepth(1);
+  }
+
+  // ── SPAWN OBJECTS ──
+  _spawnTrees() {
+    const rng = new Phaser.Math.RandomDataGenerator(['tree_seed']);
+    for (let i = 0; i < 300; i++) {
+      const x = rng.between(80, WW - 80), y = rng.between(80, WH - 80);
+      if (Math.hypot(x - WW/2, y - WH/2) < 160) continue;
+      this.trees.push(new Tree(this, x, y));
+    }
+  }
+
+  _spawnRocks() {
+    const rng = new Phaser.Math.RandomDataGenerator(['rock_seed']);
+    for (let i = 0; i < 120; i++) {
+      const x = rng.between(80, WW - 80), y = rng.between(80, WH - 80);
+      if (Math.hypot(x - WW/2, y - WH/2) < 180) continue;
+      this.rocks.push(new Rock(this, x, y));
+    }
+  }
+
+  _spawnEnemies() {
+    // Area 1: slimes & rabbits
+    this._spawnEnemyGroup('slime', 20);
+    this._spawnEnemyGroup('rabbit', 15);
+    // Area 2
+    this._spawnEnemyGroup('bear', 8);
+    this._spawnEnemyGroup('wolf', 10);
+    // Area 3 — far corners
+    this._spawnEnemyGroup('boar', 6);
+  }
+
+  _spawnEnemyGroup(type, count) {
+    const rng = new Phaser.Math.RandomDataGenerator([type + count]);
+    for (let i = 0; i < count; i++) {
+      const x = rng.between(100, WW - 100), y = rng.between(100, WH - 100);
+      if (Math.hypot(x - WW/2, y - WH/2) < 200) continue;
+      this.enemies.push(new Enemy(this, type, x, y));
+    }
+  }
+
+  // ── GOLD / DROP SPAWNING ──
+  spawnGold(x, y, amount) {
+    const count = Math.min(amount, 8);
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2;
+      const r = 18 + Math.random() * 12;
+      const gx = x + Math.cos(angle) * r, gy = y + Math.sin(angle) * r;
+      const coin = this.add.circle(gx, gy, 5, 0xffd700);
+      coin.setDepth(500);
+      coin.goldValue = amount;
+      this.goldParticles.push(coin);
+      this.tweens.add({
+        targets: coin, y: gy - 20, duration: 300, ease: 'Quad.Out',
+        onComplete: () => { this.tweens.add({ targets: coin, y: gy, duration: 200 }); }
+      });
+    }
+  }
+
+  spawnDrop(x, y, type) {
+    const colors = { meat: 0xff6666, skin: 0xcc9944, gem: 0x9944ff };
+    const labels = { meat: '肉', skin: '皮', gem: '魔石' };
+    floatText(this, x, y - 20, `+1 ${labels[type]}`, '#ffaaaa');
+    STATE[type] = (STATE[type] || 0) + 1;
+  }
+
+  // ── PLAYER MOVEMENT ──
+  _movePlayer() {
+    const spd = 155;
+    let vx = 0, vy = 0;
+    const k = this.wasd, c = this.cursors;
+    if (k.A.isDown || c.left.isDown)  vx -= spd;
+    if (k.D.isDown || c.right.isDown) vx += spd;
+    if (k.W.isDown || c.up.isDown)    vy -= spd;
+    if (k.S.isDown || c.down.isDown)  vy += spd;
+    if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707; }
+    this.player.body.setVelocity(vx, vy);
+
+    const px = this.player.x, py = this.player.y;
+    this.player.setDepth(py + 50);
+    this.playerShadow.setPosition(px, py + 22);
+    this.playerShadow.setDepth(py + 49);
+    this.playerLabel.setPosition(px, py - 28).setDepth(py + 100);
+    this.playerHpBg.setPosition(px, py - 22).setDepth(py + 101);
+    const ratio = Math.max(0, this.playerHp / this.playerMaxHp);
+    this.playerHpBar.setPosition(px - 14, py - 22).setSize(28 * ratio, 4).setDepth(py + 102);
+  }
+
+  // ── AUTO-ATTACK ──
+  _autoAttack(time) {
+    const atkInterval = 700;
+    if (time - this.lastAttack < atkInterval) return;
+    const px = this.player.x, py = this.player.y;
+    let nearest = null, nearDist = this.attackRange;
+    for (const e of this.enemies) {
+      if (!e.alive) continue;
+      const dist = Math.hypot(e.phys.x - px, e.phys.y - py);
+      if (dist < nearDist) { nearDist = dist; nearest = e; }
+    }
+    if (!nearest) return;
+    this.lastAttack = time;
+    const dmg = Math.max(1, this.playerAtk - nearest.data.def || 0);
+    nearest.takeDamage(dmg);
+    nearest.updateVisuals();
+    floatText(this, nearest.phys.x, nearest.phys.y - 20, `-${dmg}`, '#ff4444');
+
+    // Attack line flash
+    const g = this.add.graphics();
+    g.lineStyle(2, 0xff8800, 0.8);
+    g.lineBetween(px, py, nearest.phys.x, nearest.phys.y);
+    g.setDepth(8000);
+    this.time.delayedCall(120, () => g.destroy());
+  }
+
+  // ── AUTO-COLLECT ──
+  _autoCollect(time) {
+    const collectInterval = 1400;
+    if (time - this.lastCollect < collectInterval) return;
+    const px = this.player.x, py = this.player.y;
+    const bonus = BASE_DATA[STATE.baseLv].bonus;
+    const range = this.collectRange * bonus;
+
+    // Trees
+    for (const t of this.trees) {
+      if (t.depleted) continue;
+      const dist = Math.hypot(t.x - px, t.y - py);
+      if (dist < range) {
+        const got = Math.max(1, Math.round(1 * bonus));
+        STATE.wood += got;
+        t.wood -= got;
+        floatText(this, t.x, t.y - 30, `木 +${got}`, '#88ff88');
+        if (t.wood <= 0) {
+          t.setDepleted(true);
+          const respawn = { obj: t, at: time + 12000 };
+          this.respawnQueue.push(respawn);
+        }
+        this.lastCollect = time;
+        return;
+      }
+    }
+
+    // Rocks
+    for (const r of this.rocks) {
+      if (r.depleted) continue;
+      const dist = Math.hypot(r.x - px, r.y - py);
+      if (dist < range) {
+        STATE.stone = (STATE.stone || 0) + 1;
+        r.stone -= 1;
+        floatText(this, r.x, r.y - 30, '石 +1', '#bbbbff');
+        if (r.stone <= 0) r.setDepleted(true);
+        this.lastCollect = time;
+        return;
+      }
+    }
+
+    // Gold coins
+    const toRemove = [];
+    for (const coin of this.goldParticles) {
+      const dist = Math.hypot(coin.x - px, coin.y - py);
+      if (dist < 50) {
+        toRemove.push(coin);
+        floatText(this, coin.x, coin.y - 10, `+${coin.goldValue}G`, '#ffd700');
+      }
+    }
+    if (toRemove.length > 0) {
+      toRemove.forEach(c => { c.destroy(); this.goldParticles.splice(this.goldParticles.indexOf(c), 1); });
+      this.lastCollect = time;
+    }
+  }
+
+  // ── ENEMY AI ──
+  _updateEnemies(time, delta) {
+    const px = this.player.x, py = this.player.y;
+    for (const e of this.enemies) {
+      if (!e.alive) { e.updateVisuals(); continue; }
+
+      const dist = Math.hypot(e.phys.x - px, e.phys.y - py);
+      const spd = e.spd;
+
+      if (dist < e.aggroRange) {
+        // Chase player
+        const angle = Math.atan2(py - e.phys.y, px - e.phys.x);
+        e.phys.body.setVelocity(Math.cos(angle) * spd, Math.sin(angle) * spd);
+
+        // Attack player
+        if (dist < 40 && time - e.attackCooldown > 1200) {
+          e.attackCooldown = time;
+          const dmg = Math.max(1, e.atk - this.playerDef);
+          this.playerHp = Math.max(0, this.playerHp - dmg);
+          floatText(this, px, py - 30, `-${dmg}`, '#ff2200');
+          if (this.playerHp <= 0) this._playerDead();
+        }
+      } else {
+        // Wander
+        e.wanderTimer -= delta;
+        if (e.wanderTimer <= 0) {
+          e.wanderTimer = Phaser.Math.Between(1500, 3500);
+          e.wanderAngle = Math.random() * Math.PI * 2;
+        }
+        e.phys.body.setVelocity(
+          Math.cos(e.wanderAngle) * spd * 0.4,
+          Math.sin(e.wanderAngle) * spd * 0.4
+        );
+      }
+
+      e.updateVisuals();
+    }
+    // Clean dead
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      if (!this.enemies[i].alive && !this.enemies[i].sprite.active) {
+        this.enemies.splice(i, 1);
+      }
+    }
+  }
+
+  _respawnTrees(time) {
+    for (let i = this.respawnQueue.length - 1; i >= 0; i--) {
+      const r = this.respawnQueue[i];
+      if (time >= r.at) {
+        r.obj.wood = Phaser.Math.Between(3, 8);
+        r.obj.setDepleted(false);
+        this.respawnQueue.splice(i, 1);
+      }
+    }
+  }
+
+  _regenHp(time) {
+    const interval = BASE_DATA[STATE.baseLv].bonus >= 1.5 ? 3000 : 8000;
+    if (time - this.lastRegen > interval) {
+      this.lastRegen = time;
+      const regen = Math.round(this.playerMaxHp * 0.02);
+      this.playerHp = Math.min(this.playerMaxHp, this.playerHp + regen);
+    }
+  }
+
+  _playerDead() {
+    this.playerHp = this.playerMaxHp;
+    this.player.setPosition(WW / 2, WH / 2);
+    floatText(this, WW / 2, WH / 2 - 60, '気絶！拠点に戻る...', '#ff8800');
+  }
+
+  // ── APPLY UPGRADES (called from UIScene) ──
+  applyWeaponUpgrade() {
+    const lv = STATE.weaponLv;
+    this.playerAtk   = WEAPON_DATA[lv].atk;
+    this.attackRange = WEAPON_DATA[lv].range;
+  }
+
+  applyArmorUpgrade() {
+    const lv = STATE.armorLv;
+    const prev = this.playerMaxHp;
+    this.playerMaxHp = ARMOR_DATA[lv].maxHp;
+    this.playerDef   = ARMOR_DATA[lv].def;
+    this.playerHp    = Math.min(this.playerHp + (this.playerMaxHp - prev), this.playerMaxHp);
+  }
+
+  update(time, delta) {
+    this._movePlayer();
+    this._autoAttack(time);
+    this._autoCollect(time);
+    this._updateEnemies(time, delta);
+    this._respawnTrees(time);
+    this._regenHp(time);
+  }
+}
+
+// ─────────────────────────────────────────────
+// UI SCENE
+// ─────────────────────────────────────────────
+class UIScene extends Phaser.Scene {
+  constructor() { super({ key: 'UIScene' }); }
+
+  create() {
+    this.cameras.main.setViewport(0, 0, GW, GH);
+    this._buildHUD();
+    this._buildPanel();
+    this._buildUpgradeButtons();
+  }
+
+  _buildHUD() {
+    // Background bar
+    this.add.rectangle(GW / 2, HUD_H / 2, GW, HUD_H, 0x0a1a05, 0.92).setScrollFactor(0).setDepth(1000);
+    this.add.rectangle(GW / 2, HUD_H, GW, 2, 0x44aa44, 0.6).setScrollFactor(0).setDepth(1001);
+
+    // HP label
+    this.add.text(12, 8, 'HP', { fontSize: '12px', fill: '#aaffaa' }).setScrollFactor(0).setDepth(1002);
+    this.hpBg  = this.add.rectangle(13, 26, 180, 16, 0x330a0a).setOrigin(0, 0.5).setScrollFactor(0).setDepth(1002);
+    this.hpBar = this.add.rectangle(13, 26, 180, 16, 0x22cc55).setOrigin(0, 0.5).setScrollFactor(0).setDepth(1003);
+
+    // HP text
+    this.hpText = this.add.text(103, 26, '', { fontSize: '11px', fill: '#ffffff', stroke: '#000', strokeThickness: 2 })
+      .setOrigin(0.5).setScrollFactor(0).setDepth(1004);
+
+    // Gold / resources
+    this.goldText = this.add.text(210, 8, '', { fontSize: '14px', fill: '#ffd700', stroke: '#000', strokeThickness: 2 })
+      .setScrollFactor(0).setDepth(1002);
+    this.woodText = this.add.text(340, 8, '', { fontSize: '13px', fill: '#88ff88', stroke: '#000', strokeThickness: 2 })
+      .setScrollFactor(0).setDepth(1002);
+    this.resourceText = this.add.text(460, 8, '', { fontSize: '12px', fill: '#ccccff', stroke: '#000', strokeThickness: 2 })
+      .setScrollFactor(0).setDepth(1002);
+
+    // Area & kills
+    this.statsText = this.add.text(GW - 10, 8, '', { fontSize: '11px', fill: '#aaaaaa', align: 'right' })
+      .setOrigin(1, 0).setScrollFactor(0).setDepth(1002);
+
+    // Weapon name indicator
+    this.weaponLabel = this.add.text(210, 30, '', { fontSize: '11px', fill: '#ff9944' })
+      .setScrollFactor(0).setDepth(1002);
+  }
+
+  _buildPanel() {
+    const py = GH - PANEL_H / 2;
+    this.add.rectangle(GW / 2, py, GW, PANEL_H, 0x0a1505, 0.93).setScrollFactor(0).setDepth(1000);
+    this.add.rectangle(GW / 2, GH - PANEL_H, GW, 2, 0x44aa44, 0.5).setScrollFactor(0).setDepth(1001);
+  }
+
+  _buildUpgradeButtons() {
+    const btnY = GH - PANEL_H / 2;
+    const btnW = 170, btnH = 44, gap = 18;
+    const totalW = btnW * 3 + gap * 2;
+    const startX = (GW - totalW) / 2 + btnW / 2;
+
+    this._makeBtn(startX,              btnY, btnW, btnH, '⚔ 武器アップ',  0x331a00, 0xff8833, 'weapon');
+    this._makeBtn(startX + btnW + gap, btnY, btnW, btnH, '🛡 防具アップ',  0x001a33, 0x3399ff, 'armor');
+    this._makeBtn(startX + (btnW + gap) * 2, btnY, btnW, btnH, '🏠 拠点アップ', 0x001a00, 0x44ff44, 'base');
+  }
+
+  _makeBtn(x, y, w, h, label, bgCol, borderCol, tag) {
+    const bg = this.add.rectangle(x, y, w, h, bgCol, 0.95)
+      .setScrollFactor(0).setDepth(1005).setStrokeStyle(2, borderCol);
+    const txt = this.add.text(x, y - 6, label, { fontSize: '13px', fill: '#ffffff', stroke: '#000', strokeThickness: 2 })
+      .setOrigin(0.5).setScrollFactor(0).setDepth(1006);
+    const sub = this.add.text(x, y + 10, '', { fontSize: '11px', fill: '#cccccc' })
+      .setOrigin(0.5).setScrollFactor(0).setDepth(1006);
+
+    bg.setInteractive({ useHandCursor: true });
+    bg.on('pointerover',  () => bg.setFillStyle(bgCol + 0x111111));
+    bg.on('pointerout',   () => bg.setFillStyle(bgCol, 0.95));
+    bg.on('pointerdown',  () => this._onUpgrade(tag, txt, sub, bg));
+
+    // Store references for update
+    this[`${tag}SubText`] = sub;
+    this[`${tag}Btn`] = bg;
+
+    return { bg, txt, sub };
+  }
+
+  _onUpgrade(tag, txt, sub, bg) {
+    const game = this.scene.get('GameScene');
+
+    if (tag === 'weapon') {
+      const next = STATE.weaponLv + 1;
+      if (next >= WEAPON_DATA.length) return;
+      const cost = WEAPON_DATA[next].cost;
+      if (STATE.gold < cost) { floatBtnError(this, bg, '金貨が足りない！'); return; }
+      STATE.gold -= cost;
+      STATE.weaponLv = next;
+      game.applyWeaponUpgrade();
+      floatText(game, game.player.x, game.player.y - 50, `武器: ${WEAPON_DATA[next].name}`, '#ff9944');
+    }
+
+    if (tag === 'armor') {
+      const next = STATE.armorLv + 1;
+      if (next >= ARMOR_DATA.length) return;
+      const cost = ARMOR_DATA[next].cost;
+      if (STATE.gold < cost) { floatBtnError(this, bg, '金貨が足りない！'); return; }
+      STATE.gold -= cost;
+      STATE.armorLv = next;
+      game.applyArmorUpgrade();
+      floatText(game, game.player.x, game.player.y - 50, `防具: ${ARMOR_DATA[next].name}`, '#3399ff');
+    }
+
+    if (tag === 'base') {
+      const next = STATE.baseLv + 1;
+      if (next >= BASE_DATA.length) return;
+      const bd = BASE_DATA[next];
+      if (STATE.gold < bd.goldCost || STATE.wood < bd.woodCost) {
+        floatBtnError(this, bg, '素材が足りない！'); return;
+      }
+      STATE.gold -= bd.goldCost;
+      STATE.wood -= bd.woodCost;
+      STATE.baseLv = next;
+      floatText(game, game.player.x, game.player.y - 50, `拠点: ${bd.name}`, '#44ff44');
+    }
+  }
+
+  update() {
+    const game = this.scene.get('GameScene');
+    if (!game || !game.playerHp) return;
+
+    // HUD hp
+    const ratio = Math.max(0, game.playerHp / game.playerMaxHp);
+    this.hpBar.setSize(180 * ratio, 16);
+    const col = ratio > 0.5 ? 0x22cc55 : ratio > 0.25 ? 0xffaa00 : 0xff3300;
+    this.hpBar.setFillStyle(col);
+    this.hpText.setText(`${game.playerHp | 0} / ${game.playerMaxHp}`);
+
+    // Resources
+    this.goldText.setText(`💰 ${STATE.gold}G`);
+    this.woodText.setText(`🌲 木${STATE.wood}`);
+    this.resourceText.setText(`🥩${STATE.meat || 0}  🫧${STATE.skin || 0}  💎${STATE.gem || 0}`);
+    this.statsText.setText(`撃破: ${STATE.kills}  エリア: ${STATE.areaUnlocked}`);
+    this.weaponLabel.setText(`⚔ ${WEAPON_DATA[STATE.weaponLv].name}  🛡 ${ARMOR_DATA[STATE.armorLv].name}`);
+
+    // Button subtexts
+    const wNext = STATE.weaponLv + 1;
+    this.weaponSubText.setText(wNext < WEAPON_DATA.length
+      ? `${WEAPON_DATA[wNext].name} / ${WEAPON_DATA[wNext].cost}G`
+      : 'MAX');
+
+    const aNext = STATE.armorLv + 1;
+    this.armorSubText.setText(aNext < ARMOR_DATA.length
+      ? `${ARMOR_DATA[aNext].name} / ${ARMOR_DATA[aNext].cost}G`
+      : 'MAX');
+
+    const bNext = STATE.baseLv + 1;
+    this.baseSubText.setText(bNext < BASE_DATA.length
+      ? `${BASE_DATA[bNext].name} / ${BASE_DATA[bNext].goldCost}G+木${BASE_DATA[bNext].woodCost}`
+      : 'MAX');
+  }
+}
+
+function floatBtnError(scene, btn, msg) {
+  scene.tweens.add({ targets: btn, x: btn.x + 5, duration: 50, yoyo: true, repeat: 3 });
+  const t = scene.add.text(btn.x, btn.y - 30, msg, { fontSize: '12px', fill: '#ff4444', stroke: '#000', strokeThickness: 2 })
+    .setOrigin(0.5).setScrollFactor(0).setDepth(2000);
+  scene.tweens.add({ targets: t, y: t.y - 20, alpha: 0, duration: 900, onComplete: () => t.destroy() });
+}
+
+// ─────────────────────────────────────────────
+// PHASER CONFIG
+// ─────────────────────────────────────────────
+const config = {
+  type: Phaser.AUTO,
+  width: GW,
+  height: GH,
+  parent: 'game-container',
+  backgroundColor: '#1a2e0a',
+  physics: {
+    default: 'arcade',
+    arcade: { gravity: { y: 0 }, debug: false },
+  },
+  scene: [GameScene, UIScene],
+};
+
+new Phaser.Game(config);
+</script>
+</body>
+</html>
