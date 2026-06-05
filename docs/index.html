@@ -159,6 +159,9 @@ const STATE = {
 
 const save  = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(STATE)); } catch(e){} };
 const load  = () => { try { const r=localStorage.getItem(SAVE_KEY); if(r) Object.assign(STATE, JSON.parse(r)); return !!r; } catch(e){ return false; } };
+const HS_KEY='fsurvival_hs';
+const saveHS= () => { try { const prev=JSON.parse(localStorage.getItem(HS_KEY)||'{}'); const best={kills:Math.max(prev.kills||0,STATE.kills),wave:Math.max(prev.wave||0,STATE.wave),totalGold:Math.max(prev.totalGold||0,STATE.totalGold),playTime:Math.max(prev.playTime||0,STATE.playTime||0)}; localStorage.setItem(HS_KEY,JSON.stringify(best)); } catch(e){} };
+const loadHS= () => { try { return JSON.parse(localStorage.getItem(HS_KEY)||'{}'); } catch(e){ return {}; } };
 const hasSave = () => !!localStorage.getItem(SAVE_KEY);
 const areaUnlocked = id => STATE.areas.includes(id);
 
@@ -357,6 +360,15 @@ class TitleScene extends Phaser.Scene {
     this.add.text(GW/2,242,'フォレスト・サバイバル',{
       fontSize:'15px',fill:'#66cc66',stroke:'#000',strokeThickness:3
     }).setOrigin(0.5);
+
+    // Best record display
+    const hs=loadHS();
+    if(hs.kills||hs.wave){
+      const pt=Math.round((hs.playTime||0)/60);
+      this.add.text(GW/2,285,`🏆 ベスト  撃破:${hs.kills||0}  WAVE:${hs.wave||0}  ${pt}分`,{
+        fontSize:'12px',fill:'#ffdd66',stroke:'#000',strokeThickness:2
+      }).setOrigin(0.5);
+    }
 
     this._btn(GW/2,330,230,54,'⚔  NEW GAME',0x1a4010,0x44ff44,()=>{
       Object.assign(STATE,{gold:0,wood:0,meat:0,skin:0,gem:0,stone:0,weaponLv:0,armorLv:0,baseLv:0,kills:0,totalGold:0,areas:[1],wave:0,craftAtk:0,craftCol:0,craftBurst:0,playTime:0});
@@ -1331,6 +1343,7 @@ class UIScene extends Phaser.Scene {
     this.pauseHomeTx=this.add.text(GW/2,GH/2+95,'🏠 タイトルへ',{fontSize:'14px',fill:'#ff8844',stroke:'#000',strokeThickness:2})
       .setOrigin(0.5).setScrollFactor(0).setDepth(4003).setVisible(false);
     this.pauseHomeBg.on('pointerdown',()=>{
+      saveHS();
       stopBGM();
       const gm=this.game.scene;
       gm.stop('GameScene');
