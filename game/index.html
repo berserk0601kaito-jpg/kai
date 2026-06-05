@@ -416,9 +416,10 @@ class GameScene extends Phaser.Scene {
     this.cameras.main.setViewport(0,HUD_H,GW,GH-HUD_H-PANEL_H);
 
     this.tAtk=0; this.tCol=0; this.tRgn=0; this.tSave=0; this.tAreaChk=0;
-    this.tPassive=0; this.tWave=0; this._lastMilestone=0;
+    this.tPassive=0; this.tWave=0; this.tDay=0; this._lastMilestone=0;
     this.curArea=1; this.moveTarget=null;
     this.dropItems=[];
+    this.combo=0; this.tCombo=0; this.comboLabel=null;
     this.lockMkrs=[];
     this._makeLockMarkers();
 
@@ -565,8 +566,26 @@ class GameScene extends Phaser.Scene {
   }
 
   onEnemyDied(e) {
-    STATE.gold+=e.d.gold; STATE.totalGold+=e.d.gold; STATE.kills++;
-    this.spawnGold(e.px,e.py,e.d.gold);
+    // Combo multiplier
+    const now=this.time.now;
+    if(now-this.tCombo<3000) this.combo=Math.min(this.combo+1,15);
+    else this.combo=1;
+    this.tCombo=now;
+    const mult=Math.round((1+this.combo*0.12)*10)/10;
+    const baseGold=e.d.gold;
+    const earned=Math.round(baseGold*mult);
+    STATE.gold+=earned; STATE.totalGold+=earned; STATE.kills++;
+    this.spawnGold(e.px,e.py,earned);
+    // Combo display
+    if(this.combo>=2){
+      if(this.comboLabel) this.comboLabel.destroy();
+      this.comboLabel=this.add.text(this.pl.x,this.pl.y-65,`🔥 ${this.combo} COMBO x${mult}`,{
+        fontSize:'15px',fill:'#ffaa00',stroke:'#000',strokeThickness:3
+      }).setOrigin(0.5).setDepth(9500);
+      this.tweens.add({targets:this.comboLabel,y:this.comboLabel.y-30,duration:1200,onComplete:()=>{
+        if(this.comboLabel){this.comboLabel.destroy();this.comboLabel=null;}
+      }});
+    }
     if(e.d.drop) this._spawnDropItem(e.px,e.py,e.d.drop);
     // Queue respawn (not for wave type)
     if(e.type!=='wave' && areaUnlocked(e.d.area)){
@@ -903,6 +922,30 @@ class GameScene extends Phaser.Scene {
     snd('unlock');
   }
 
+  // ── DAY/NIGHT CYCLE ──
+  _dayNight(time) {
+    // Full cycle: 4 minutes (240 seconds)
+    const cycle=240000;
+    const t=(time%cycle)/cycle; // 0..1
+    // Phases: day 0-0.35, dusk 0.35-0.5, night 0.5-0.85, dawn 0.85-1.0
+    let r,g,b;
+    const lerp=(a,bv,t)=>Math.round(a+(bv-a)*t);
+    if(t<0.35){       // Day
+      r=255;g=255;b=255;
+    } else if(t<0.5){ // Dusk
+      const p=(t-0.35)/0.15;
+      r=lerp(255,80,p); g=lerp(255,60,p); b=lerp(255,100,p);
+    } else if(t<0.85){// Night
+      const p=(t-0.5)/0.35;
+      const mid=p<0.5?p*2:2-p*2;
+      r=lerp(80,50,mid); g=lerp(60,45,mid); b=lerp(100,120,mid);
+    } else {           // Dawn
+      const p=(t-0.85)/0.15;
+      r=lerp(50,255,p); g=lerp(45,200,p); b=lerp(120,180,p);
+    }
+    this.cameras.main.setTint(Phaser.Display.Color.GetColor(r,g,b));
+  }
+
   // ── PASSIVE INCOME ──
   _passive(time) {
     const rate=BASE_DATA[STATE.baseLv].passive;
@@ -947,6 +990,7 @@ class GameScene extends Phaser.Scene {
     this._passive(time);
     this._milestones();
     this._waveSystem(time);
+    this._dayNight(time);
     this._updateRangeCircle();
     this._autoSave(time);
   }
@@ -963,6 +1007,9 @@ class UIScene extends Phaser.Scene {
     this._hud();
     this._panel();
     this._minimap();
+    this._statsPanel();
+    this.showStats=false;
+    this.input.keyboard.on('keydown-TAB',(e)=>{e.preventDefault();this._toggleStats();});
   }
 
   _hud() {
@@ -981,6 +1028,7 @@ class UIScene extends Phaser.Scene {
     this.gearTx = this.add.text(208,43,'',{fontSize:'10px',fill:'#ff9944'}).setScrollFactor(0).setDepth(1002);
     this.staTxt   = this.add.text(GW-170,5,'',{fontSize:'11px',fill:'#888888'}).setScrollFactor(0).setDepth(1002);
     this.passiveTx= this.add.text(GW-170,22,'',{fontSize:'10px',fill:'#ffd700'}).setScrollFactor(0).setDepth(1002);
+    this.add.text(GW/2,HUD_H-10,'[TAB] Stats',{fontSize:'9px',fill:'#335533'}).setOrigin(0.5).setScrollFactor(0).setDepth(1002);
 
     // Mute button
     let muted=false;
@@ -1076,6 +1124,48 @@ class UIScene extends Phaser.Scene {
     this.tweens.add({targets:t,y:t.y-18,alpha:0,duration:900,onComplete:()=>t.destroy()});
   }
 
+  // ── STATS PANEL ──
+  _statsPanel() {
+    const sw=340,sh=280,sx=GW/2-sw/2,sy=GH/2-sh/2;
+    this.statsBg=this.add.rectangle(GW/2,GH/2,sw,sh,0x060e04,0.95)
+      .setScrollFactor(0).setDepth(3000).setStrokeStyle(2,0x44ff44).setVisible(false);
+    this.statsTxt=this.add.text(GW/2,GH/2,'',{
+      fontSize:'14px',fill:'#ccffcc',stroke:'#000',strokeThickness:2,
+      align:'center',lineSpacing:6
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(3001).setVisible(false);
+    this.statsHint=this.add.text(GW/2,sy+sh-16,'[TAB] で閉じる',{
+      fontSize:'11px',fill:'#446644'
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(3001).setVisible(false);
+  }
+
+  _toggleStats() {
+    this.showStats=!this.showStats;
+    [this.statsBg,this.statsTxt,this.statsHint].forEach(o=>o.setVisible(this.showStats));
+    if(this.showStats) this._refreshStats();
+  }
+
+  _refreshStats() {
+    const gs=this.scene.get('GameScene');
+    const pt=Math.round((STATE.playTime||0)/60);
+    const lines=[
+      '─── ステータス ───',
+      `⚔ 武器: ${WEAPON_DATA[STATE.weaponLv].name}  ATK ${WEAPON_DATA[STATE.weaponLv].atk}`,
+      `🛡 防具: ${ARMOR_DATA[STATE.armorLv].name}  HP ${ARMOR_DATA[STATE.armorLv].maxHp}`,
+      `🏠 拠点: ${BASE_DATA[STATE.baseLv].name}`,
+      '',
+      `💰 総獲得金貨: ${STATE.totalGold}G`,
+      `💀 総撃破数: ${STATE.kills}`,
+      `⚡ WAVE到達: ${STATE.wave}`,
+      `🗺 解放エリア: ${STATE.areas.length}/4`,
+      '',
+      `🌲 木材: ${STATE.wood}  🪨 石: ${STATE.stone||0}`,
+      `🥩 肉: ${STATE.meat||0}  🫧 皮: ${STATE.skin||0}  💎 魔石: ${STATE.gem||0}`,
+      '',
+      `⏱ プレイ時間: 約${pt}分`,
+    ];
+    this.statsTxt.setText(lines.join('\n'));
+  }
+
   // ── MINIMAP ──
   _minimap() {
     const MX=GW-92,MY=HUD_H+6,MW=82,MH=82;
@@ -1154,6 +1244,7 @@ class UIScene extends Phaser.Scene {
     } else this.baseSub.setText('MAX');
 
     this._drawMinimap();
+    if(this.showStats) this._refreshStats();
   }
 }
 
