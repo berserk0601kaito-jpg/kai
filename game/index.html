@@ -145,6 +145,7 @@ const STATE = {
   weaponLv:0, armorLv:0, baseLv:0,
   kills:0, totalGold:0,
   areas:[1], wave:0,
+  craftAtk:0, craftCol:0, craftBurst:0,
   playTime:0,
 };
 
@@ -179,6 +180,13 @@ function floatTxt(scene, x, y, msg, col='#ffff00') {
 
 function shake(scene, i=0.005, d=130) {
   scene.cameras.main.shake(d, i);
+}
+
+function floatBtnErrUI(scene, bg, msg) {
+  scene.tweens.add({targets:bg, alpha:0.25, duration:70, yoyo:true, repeat:2, onComplete:()=>bg.setAlpha(1)});
+  const t=scene.add.text(bg.x,bg.y-40,msg,{fontSize:'11px',fill:'#ff4444',stroke:'#000',strokeThickness:2})
+    .setOrigin(0.5).setScrollFactor(0).setDepth(3500);
+  scene.tweens.add({targets:t,y:t.y-18,alpha:0,duration:900,onComplete:()=>t.destroy()});
 }
 
 // ═══════════════════════════════════════════
@@ -407,6 +415,9 @@ class GameScene extends Phaser.Scene {
     this.patk = WEAPON_DATA[STATE.weaponLv].atk;
     this.prng = WEAPON_DATA[STATE.weaponLv].range;
     this.pspd = WEAPON_DATA[STATE.weaponLv].spd;
+    this.collectRange = 65;
+    this.burstMult = 1;
+    this._applyCraftBonuses();
 
     this.cursors = this.input.keyboard.createCursorKeys();
     this.wasd    = this.input.keyboard.addKeys('W,A,S,D');
@@ -749,7 +760,7 @@ class GameScene extends Phaser.Scene {
     for(const e of this.enemies){
       if(!e.alive) continue;
       if(Math.hypot(e.px-px,e.py-py)<radius){
-        const dmg=Math.round(this.patk*1.5);
+        const dmg=Math.round(this.patk*1.5*(this.burstMult||1));
         e.hit(dmg); e.sync();
         floatTxt(this,e.px,e.py-25,`💥-${dmg}`,'#cc44ff');
         hitCount++;
@@ -818,7 +829,7 @@ class GameScene extends Phaser.Scene {
     if(time-this.tCol<1250) return;
     const px=this.pl.x, py=this.pl.y;
     const bonus=BASE_DATA[STATE.baseLv].bonus;
-    const range=65*bonus;
+    const range=(this.collectRange||65)*bonus;
 
     // Drop items (meat/skin/gem on ground)
     if (this._collectDropItems(px,py)) { this.tCol=time; return; }
@@ -973,6 +984,16 @@ class GameScene extends Phaser.Scene {
     snd('die');
   }
 
+  // ── CRAFT BONUSES ──
+  _applyCraftBonuses() {
+    const base=WEAPON_DATA[STATE.weaponLv];
+    this.patk = base.atk + (STATE.craftAtk||0)*20;
+    this.prng = base.range;
+    this.pspd = base.spd;
+    this.collectRange = 65 + (STATE.craftCol||0)*13;
+    this.burstMult = 1 + (STATE.craftBurst||0)*0.5;
+  }
+
   // ── APPLY UPGRADES ──
   applyWeapon() {
     const d=WEAPON_DATA[STATE.weaponLv];
@@ -1099,10 +1120,14 @@ class UIScene extends Phaser.Scene {
     this.cameras.main.setViewport(0,0,GW,GH);
     this._hud();
     this._panel();
+    this._craftPanel();
     this._minimap();
     this._statsPanel();
-    this.showStats=false;
+    this._pauseOverlay();
+    this.showStats=false; this.paused=false; this.showCraft=false;
     this.input.keyboard.on('keydown-TAB',(e)=>{e.preventDefault();this._toggleStats();});
+    this.input.keyboard.on('keydown-ESC',()=>this._togglePause());
+    this.input.keyboard.on('keydown-C',  ()=>this._toggleCraft());
   }
 
   _hud() {
@@ -1121,7 +1146,7 @@ class UIScene extends Phaser.Scene {
     this.gearTx = this.add.text(208,43,'',{fontSize:'10px',fill:'#ff9944'}).setScrollFactor(0).setDepth(1002);
     this.staTxt   = this.add.text(GW-170,5,'',{fontSize:'11px',fill:'#888888'}).setScrollFactor(0).setDepth(1002);
     this.passiveTx= this.add.text(GW-170,22,'',{fontSize:'10px',fill:'#ffd700'}).setScrollFactor(0).setDepth(1002);
-    this.add.text(GW/2,HUD_H-10,'[TAB] Stats',{fontSize:'9px',fill:'#335533'}).setOrigin(0.5).setScrollFactor(0).setDepth(1002);
+    this.add.text(GW/2,HUD_H-10,'[TAB]Stats  [C]Craft  [ESC]Pause',{fontSize:'9px',fill:'#335533'}).setOrigin(0.5).setScrollFactor(0).setDepth(1002);
 
     // Mute button
     let muted=false;
@@ -1215,6 +1240,90 @@ class UIScene extends Phaser.Scene {
     const t=this.add.text(bx,by-36,'素材が足りない！',{fontSize:'11px',fill:'#ff4444',stroke:'#000',strokeThickness:2})
       .setOrigin(0.5).setScrollFactor(0).setDepth(2000);
     this.tweens.add({targets:t,y:t.y-18,alpha:0,duration:900,onComplete:()=>t.destroy()});
+  }
+
+  // ── PAUSE OVERLAY ──
+  _pauseOverlay() {
+    this.pauseBg=this.add.rectangle(GW/2,GH/2,GW,GH,0x000000,0.7).setScrollFactor(0).setDepth(4000).setVisible(false);
+    this.pauseTx=this.add.text(GW/2,GH/2-20,'⏸ PAUSE',{fontSize:'48px',fill:'#ffffff',stroke:'#000',strokeThickness:6})
+      .setOrigin(0.5).setScrollFactor(0).setDepth(4001).setVisible(false);
+    this.add.text(GW/2,GH/2+40,'[ESC] 再開',{fontSize:'16px',fill:'#aaaaaa'})
+      .setOrigin(0.5).setScrollFactor(0).setDepth(4001);
+    this.pauseHint=this.add.text(GW/2,GH/2+40,'[ESC] 再開',{fontSize:'16px',fill:'#aaaaaa'})
+      .setOrigin(0.5).setScrollFactor(0).setDepth(4001).setVisible(false);
+  }
+
+  _togglePause() {
+    this.paused=!this.paused;
+    const gs=this.scene.get('GameScene');
+    if(this.paused){ gs?.scene.pause(); }
+    else            { gs?.scene.resume(); }
+    [this.pauseBg,this.pauseTx,this.pauseHint].forEach(o=>o?.setVisible(this.paused));
+  }
+
+  // ── CRAFT PANEL ──
+  _craftPanel() {
+    const sw=380,sh=240,sx=(GW-sw)/2,sy=(GH-sh)/2;
+    this.craftBg=this.add.rectangle(GW/2,GH/2,sw,sh,0x060e04,0.97)
+      .setScrollFactor(0).setDepth(2500).setStrokeStyle(2,0x88ff88).setVisible(false);
+    this.add.text(GW/2,sy+18,'⚗ 特殊強化 [C]',{fontSize:'15px',fill:'#88ff88',stroke:'#000',strokeThickness:3})
+      .setOrigin(0.5).setScrollFactor(0).setDepth(2501);
+    this.craftTitle=this.add.text(GW/2,sy+18,'⚗ 特殊強化 [C]',{fontSize:'15px',fill:'#88ff88',stroke:'#000',strokeThickness:3})
+      .setOrigin(0.5).setScrollFactor(0).setDepth(2501).setVisible(false);
+    this.craftHint=this.add.text(GW/2,sy+sh-16,'[C] で閉じる',{fontSize:'11px',fill:'#446644'})
+      .setOrigin(0.5).setScrollFactor(0).setDepth(2501).setVisible(false);
+
+    const crafts=[
+      { label:'🥩 猛訓練',  sub:'肉10 → ATK+20',       type:'meat',  cost:10, statKey:'craftAtk',  max:5, desc:'ATK+20' },
+      { label:'🫧 要塞化',   sub:'皮15 → 採集+20%',     type:'skin',  cost:15, statKey:'craftCol',  max:3, desc:'採集+20%' },
+      { label:'💎 魔法強化', sub:'魔石5 → バースト+50%', type:'gem',   cost:5,  statKey:'craftBurst',max:3, desc:'バースト+50%' },
+    ];
+
+    this.craftBtns=[];
+    const bW=105,bGap=12,startX=(GW-bW*3-bGap*2)/2+bW/2;
+    crafts.forEach((cr,i)=>{
+      const bx=startX+i*(bW+bGap), by=GH/2+20;
+      const bg=this.add.rectangle(bx,by,bW,80,0x001a00,0.95)
+        .setScrollFactor(0).setDepth(2502).setStrokeStyle(2,0x44aa44).setInteractive({useHandCursor:true});
+      const lbl=this.add.text(bx,by-22,cr.label,{fontSize:'13px',fill:'#ffffff',stroke:'#000',strokeThickness:2})
+        .setOrigin(0.5).setScrollFactor(0).setDepth(2503);
+      const sub=this.add.text(bx,by,cr.sub,{fontSize:'10px',fill:'#aaaaaa'})
+        .setOrigin(0.5).setScrollFactor(0).setDepth(2503);
+      const lvTx=this.add.text(bx,by+20,'',{fontSize:'11px',fill:'#88ff88'})
+        .setOrigin(0.5).setScrollFactor(0).setDepth(2503);
+      [bg,lbl,sub,lvTx].forEach(o=>o.setVisible(false));
+      bg.on('pointerdown',()=>this._craft(cr,bg,lvTx));
+      bg.on('pointerover',()=>bg.setAlpha(0.7)); bg.on('pointerout',()=>bg.setAlpha(1));
+      this.craftBtns.push({bg,lbl,sub,lvTx,cr});
+    });
+  }
+
+  _toggleCraft() {
+    this.showCraft=!this.showCraft;
+    [this.craftBg,this.craftTitle,this.craftHint].forEach(o=>o?.setVisible(this.showCraft));
+    this.craftBtns.forEach(({bg,lbl,sub,lvTx,cr})=>{
+      [bg,lbl,sub].forEach(o=>o.setVisible(this.showCraft));
+      if(this.showCraft){
+        const lv=STATE[cr.statKey]||0;
+        lvTx.setText(lv>=cr.max?'MAX':`Lv${lv}/${cr.max}`).setVisible(true);
+      } else lvTx.setVisible(false);
+    });
+  }
+
+  _craft(cr,bg,lvTx) {
+    const lv=STATE[cr.statKey]||0;
+    if(lv>=cr.max){floatBtnErrUI(this,bg,'MAX!');return;}
+    if((STATE[cr.type]||0)<cr.cost){floatBtnErrUI(this,bg,'素材不足');return;}
+    STATE[cr.type]-=cr.cost;
+    STATE[cr.statKey]=(STATE[cr.statKey]||0)+1;
+    lvTx.setText((STATE[cr.statKey]>=cr.max)?'MAX':`Lv${STATE[cr.statKey]}/${cr.max}`);
+    const gs=this.scene.get('GameScene');
+    if(gs) gs._applyCraftBonuses();
+    snd('upgrade');
+    this.tweens.add({targets:bg,scaleX:1.08,scaleY:1.08,duration:80,yoyo:true});
+    const t=this.add.text(bg.x,bg.y-50,`+${cr.desc}!`,{fontSize:'13px',fill:'#88ff88',stroke:'#000',strokeThickness:2})
+      .setOrigin(0.5).setScrollFactor(0).setDepth(3000);
+    this.tweens.add({targets:t,y:t.y-25,alpha:0,duration:1000,onComplete:()=>t.destroy()});
   }
 
   // ── STATS PANEL ──
