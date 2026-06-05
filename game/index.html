@@ -1386,10 +1386,13 @@ class UIScene extends Phaser.Scene {
   }
 
   _togglePause() {
+    if(!this.paused){
+      if(this.showCraft) this._toggleCraft();
+      if(this.showStats) this._toggleStats();
+    }
     this.paused=!this.paused;
     const gs=this.scene.get('GameScene');
     if(this.paused){
-      if(this.showCraft) this._toggleCraft();
       gs?.scene.pause();
       if(this._vjInput){this._vjInput.active=false;this._vjInput.dx=0;this._vjInput.dy=0;}
     } else { gs?.scene.resume(); }
@@ -1437,6 +1440,7 @@ class UIScene extends Phaser.Scene {
 
   _toggleCraft() {
     if(this.paused) return;
+    if(this.showStats) this._toggleStats();
     this.showCraft=!this.showCraft;
     [this.craftBg,this.craftTitle,this.craftHint].forEach(o=>o?.setVisible(this.showCraft));
     this.craftBtns.forEach(({bg,lbl,sub,lvTx,cr})=>{
@@ -1487,6 +1491,7 @@ class UIScene extends Phaser.Scene {
 
   _toggleStats() {
     if(this.paused) return;
+    if(this.showCraft) this._toggleCraft();
     this.showStats=!this.showStats;
     [this.statsBg,this.statsTxt,this.statsHint].forEach(o=>o.setVisible(this.showStats));
     if(this.showStats) this._refreshStats();
