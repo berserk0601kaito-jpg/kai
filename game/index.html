@@ -655,9 +655,12 @@ class GameScene extends Phaser.Scene {
     // Combo display
     if(this.combo>=2){
       if(this.comboLabel) this.comboLabel.destroy();
-      const cl=this.add.text(this.pl.x,this.pl.y-65,`🔥 ${this.combo} COMBO x${mult}`,{
+      const cam=this.cameras?.main;
+      const sx=cam?this.pl.x-cam.scrollX:this.pl.x;
+      const sy=cam?this.pl.y-65-cam.scrollY:this.pl.y-65;
+      const cl=this.add.text(sx,sy,`🔥 ${this.combo} COMBO x${mult}`,{
         fontSize:'15px',fill:'#ffaa00',stroke:'#000',strokeThickness:3
-      }).setOrigin(0.5).setDepth(9500);
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(9500);
       this.comboLabel=cl;
       this.tweens.add({targets:cl,y:cl.y-30,duration:2500,onComplete:()=>{
         cl.destroy();
