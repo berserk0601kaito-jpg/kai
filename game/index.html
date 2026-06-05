@@ -1336,9 +1336,10 @@ class UIScene extends Phaser.Scene {
       .setOrigin(0.5).setScrollFactor(0).setDepth(4003).setVisible(false);
     this.pauseHomeBg.on('pointerdown',()=>{
       stopBGM();
-      this.scene.stop('GameScene');
-      this.scene.stop();
-      this.scene.start('TitleScene');
+      const gm=this.game.scene;
+      gm.stop('GameScene');
+      gm.stop('UIScene');
+      gm.start('TitleScene');
     });
     // Tap to resume on mobile (only on background, not on home button area)
     this.pauseBg.setInteractive().on('pointerdown',(ptr)=>{
