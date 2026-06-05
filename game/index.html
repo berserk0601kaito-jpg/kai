@@ -48,6 +48,47 @@ function snd(type) {
 document.addEventListener('pointerdown', ()=>{ try { ac()?.resume(); } catch(e){} }, {once:true});
 
 // ═══════════════════════════════════════════
+// AMBIENT BGM
+// ═══════════════════════════════════════════
+let _bgm = null;
+function startBGM() {
+  const ctx = ac(); if (!ctx || _bgm) return;
+  const master = ctx.createGain(); master.gain.value = 0.18; master.connect(ctx.destination);
+
+  // Low drone (A minor ambience)
+  const freqs = [55, 110, 165, 220, 330];
+  const vols  = [0.08, 0.06, 0.04, 0.03, 0.02];
+  const nodes = freqs.map((f, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const lfo  = ctx.createOscillator();
+    const lfog = ctx.createGain();
+    lfo.type = 'sine'; lfo.frequency.value = 0.08 + i * 0.04;
+    lfog.gain.value = 1.5 + i;
+    lfo.connect(lfog); lfog.connect(osc.frequency);
+    osc.type = i === 0 ? 'sawtooth' : 'sine';
+    osc.frequency.value = f;
+    gain.gain.value = vols[i];
+    osc.connect(gain); gain.connect(master);
+    osc.start(); lfo.start();
+    return { osc, gain };
+  });
+  _bgm = { nodes, master };
+}
+
+function setBGMArea(areaId) {
+  if (!_bgm) return;
+  const ctx = ac(); if (!ctx) return;
+  // Shift pitch slightly per area
+  const shifts = [1.0, 0.97, 0.94, 1.06];
+  const shift = shifts[areaId-1] || 1.0;
+  _bgm.nodes.forEach((n, i) => {
+    const baseFreqs = [55,110,165,220,330];
+    n.osc.frequency.setTargetAtTime(baseFreqs[i]*shift, ctx.currentTime, 2.0);
+  });
+}
+
+// ═══════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════
 const GW = 800, GH = 600, WW = 4000, WH = 4000;
@@ -374,10 +415,23 @@ class GameScene extends Phaser.Scene {
     this.cameras.main.setViewport(0,HUD_H,GW,GH-HUD_H-PANEL_H);
 
     this.tAtk=0; this.tCol=0; this.tRgn=0; this.tSave=0; this.tAreaChk=0;
-    this.tPassive=0; this.tMilestone=0;
-    this.curArea=1;
+    this.tPassive=0; this._lastMilestone=0;
+    this.curArea=1; this.moveTarget=null;
     this.lockMkrs=[];
     this._makeLockMarkers();
+
+    // Click-to-move
+    this.input.on('pointerdown', ptr => {
+      if (ptr.y <= HUD_H || ptr.y >= GH - PANEL_H) return;
+      const cam = this.cameras.main;
+      const wx = cam.scrollX + (ptr.x - cam.x);
+      const wy = cam.scrollY + (ptr.y - cam.y);
+      this.moveTarget = { x: wx, y: wy };
+      this._clickIndicator(wx, wy);
+    });
+
+    // BGM (delayed so AudioContext can resume after first click)
+    this.time.delayedCall(500, () => startBGM());
 
     // Attack range indicator (subtle pulsing circle)
     this.rangeCircle = this.add.graphics();
@@ -536,11 +590,22 @@ class GameScene extends Phaser.Scene {
     const spd=160;
     let vx=0, vy=0;
     const k=this.wasd, c=this.cursors;
-    if(k.A.isDown||c.left.isDown)  vx-=spd;
-    if(k.D.isDown||c.right.isDown) vx+=spd;
-    if(k.W.isDown||c.up.isDown)    vy-=spd;
-    if(k.S.isDown||c.down.isDown)  vy+=spd;
-    if(vx&&vy){vx*=0.707;vy*=0.707;}
+    const keyDown=k.A.isDown||k.D.isDown||k.W.isDown||k.S.isDown||c.left.isDown||c.right.isDown||c.up.isDown||c.down.isDown;
+
+    if (keyDown) {
+      this.moveTarget = null;
+      if(k.A.isDown||c.left.isDown)  vx-=spd;
+      if(k.D.isDown||c.right.isDown) vx+=spd;
+      if(k.W.isDown||c.up.isDown)    vy-=spd;
+      if(k.S.isDown||c.down.isDown)  vy+=spd;
+      if(vx&&vy){vx*=0.707;vy*=0.707;}
+    } else if (this.moveTarget) {
+      const dx=this.moveTarget.x-this.pl.x, dy=this.moveTarget.y-this.pl.y;
+      const dist=Math.hypot(dx,dy);
+      if (dist < 10) { this.moveTarget=null; }
+      else { vx=(dx/dist)*spd; vy=(dy/dist)*spd; }
+    }
+
     this.pl.body.setVelocity(vx,vy);
 
     const x=this.pl.x, y=this.pl.y;
@@ -552,6 +617,17 @@ class GameScene extends Phaser.Scene {
     this.pHbr.setPosition(x-15,y-22).setSize(30*ratio,5).setDepth(y+102);
     const hcol=ratio>0.5?0x22ff66:ratio>0.25?0xffcc00:0xff3300;
     this.pHbr.setFillStyle(hcol);
+  }
+
+  // ── CLICK INDICATOR ──
+  _clickIndicator(x, y) {
+    const g = this.add.graphics();
+    g.lineStyle(2, 0x44ff88, 0.9);
+    g.strokeCircle(x, y, 12);
+    g.lineStyle(1, 0x44ff88, 0.6);
+    g.strokeCircle(x, y, 5);
+    g.setDepth(9000);
+    this.tweens.add({targets:g, scaleX:0.2, scaleY:0.2, alpha:0, duration:500, onComplete:()=>g.destroy()});
   }
 
   // ── RANGE CIRCLE ──
@@ -715,6 +791,7 @@ class GameScene extends Phaser.Scene {
         floatTxt(this,this.pl.x,this.pl.y-55,'🔒 エリア未解放！','#ff8844');
       } else {
         this.curArea=na;
+        setBGMArea(na);
         const banner=AREA_DATA[na-1];
         const t=this.add.text(this.pl.x,this.pl.y-90,`エリア: ${banner.name}`,{
           fontSize:'20px',fill:'#ffffff',stroke:'#000',strokeThickness:4,
@@ -841,6 +918,19 @@ class UIScene extends Phaser.Scene {
     this.gearTx = this.add.text(208,43,'',{fontSize:'10px',fill:'#ff9944'}).setScrollFactor(0).setDepth(1002);
     this.staTxt   = this.add.text(GW-170,5,'',{fontSize:'11px',fill:'#888888'}).setScrollFactor(0).setDepth(1002);
     this.passiveTx= this.add.text(GW-170,22,'',{fontSize:'10px',fill:'#ffd700'}).setScrollFactor(0).setDepth(1002);
+
+    // Mute button
+    let muted=false;
+    const mbg=this.add.rectangle(GW-114,HUD_H-14,52,22,0x1a1a3a,0.92)
+      .setScrollFactor(0).setDepth(1005).setStrokeStyle(1,0x4444aa).setInteractive({useHandCursor:true});
+    const mt=this.add.text(GW-114,HUD_H-14,'🔊 BGM',{fontSize:'10px',fill:'#aaaaff'})
+      .setOrigin(0.5).setScrollFactor(0).setDepth(1006);
+    mbg.on('pointerdown',()=>{
+      muted=!muted;
+      if(_bgm) _bgm.master.gain.setTargetAtTime(muted?0:0.18,ac().currentTime,0.5);
+      mt.setText(muted?'🔇 BGM':'🔊 BGM');
+    });
+    mbg.on('pointerover',()=>mbg.setAlpha(0.7)); mbg.on('pointerout',()=>mbg.setAlpha(1));
 
     // Save button
     const sbg=this.add.rectangle(GW-42,HUD_H-14,64,22,0x1a3a1a,0.92)
