@@ -106,9 +106,9 @@ const AREA_DATA = [
 const WEAPON_DATA = [
   { name:'木の棒',   atk:10,  range:82,  cost:0,   spd:750 },  // faster start feel
   { name:'石の斧',   atk:28,  range:100, cost:35,  spd:700 },  // lower cost for quick first win
-  { name:'鉄の剣',   atk:55,  range:122, cost:140, spd:650 },
-  { name:'銀の剣',   atk:110, range:148, cost:380, spd:580 },
-  { name:'魔王の剣', atk:230, range:180, cost:950, spd:520 },
+  { name:'鉄の剣',   atk:55,  range:122, cost:80,  spd:650 },
+  { name:'銀の剣',   atk:110, range:148, cost:220, spd:580 },
+  { name:'魔王の剣', atk:230, range:180, cost:650, spd:520 },
 ];
 
 const ARMOR_DATA = [
@@ -121,7 +121,7 @@ const ARMOR_DATA = [
 
 const BASE_DATA = [
   { name:'初期拠点', bonus:1.0, regen:1.0, passive:0, goldCost:0,   woodCost:0   },
-  { name:'Lv2 拠点', bonus:1.2, regen:1.6, passive:0, goldCost:80,  woodCost:60  }, // less wood grind
+  { name:'Lv2 拠点', bonus:1.2, regen:1.6, passive:0, goldCost:80,  woodCost:40  },
   { name:'Lv3 拠点', bonus:1.5, regen:2.2, passive:4, goldCost:100, woodCost:200 },
   { name:'Lv4 拠点', bonus:2.0, regen:3.5, passive:10,goldCost:200, woodCost:400 },
 ];
@@ -351,7 +351,7 @@ class TitleScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     this._btn(GW/2,330,230,54,'⚔  NEW GAME',0x1a4010,0x44ff44,()=>{
-      Object.assign(STATE,{gold:0,wood:0,meat:0,skin:0,gem:0,stone:0,weaponLv:0,armorLv:0,baseLv:0,kills:0,totalGold:0,areas:[1],playTime:0});
+      Object.assign(STATE,{gold:0,wood:0,meat:0,skin:0,gem:0,stone:0,weaponLv:0,armorLv:0,baseLv:0,kills:0,totalGold:0,areas:[1],wave:0,playTime:0});
       localStorage.removeItem(SAVE_KEY);
       this.scene.start('GameScene');
       this.scene.launch('UIScene');
@@ -584,8 +584,8 @@ class GameScene extends Phaser.Scene {
     }
   }
 
-  _spawn(type) {
-    const def=EDEFS[type], ai=def.area-1;
+  _spawn(type, customDef=null) {
+    const def=customDef||EDEFS[type], ai=def.area-1;
     const inner=ai===0?140:AREA_DATA[ai-1].r+35;
     const outer=AREA_DATA[ai].r-35;
     for(let t=0;t<30;t++){
@@ -631,7 +631,7 @@ class GameScene extends Phaser.Scene {
       this.comboLabel=this.add.text(this.pl.x,this.pl.y-65,`🔥 ${this.combo} COMBO x${mult}`,{
         fontSize:'15px',fill:'#ffaa00',stroke:'#000',strokeThickness:3
       }).setOrigin(0.5).setDepth(9500);
-      this.tweens.add({targets:this.comboLabel,y:this.comboLabel.y-30,duration:1200,onComplete:()=>{
+      this.tweens.add({targets:this.comboLabel,y:this.comboLabel.y-30,duration:2500,onComplete:()=>{
         if(this.comboLabel){this.comboLabel.destroy();this.comboLabel=null;}
       }});
     }
@@ -875,7 +875,7 @@ class GameScene extends Phaser.Scene {
         e.ph.body.setVelocity(Math.cos(ang)*e.d.spd,Math.sin(ang)*e.d.spd);
         if(dist<44&&time-e.atkCd>1100){
           e.atkCd=time;
-          const dmg=Math.max(1,e.d.atk-this.pdef);
+          const dmg=Math.max(1,Math.round(e.d.atk*100/(100+this.pdef)));
           this.php=Math.max(0,this.php-dmg);
           floatTxt(this,px,py-32,`-${dmg}`,'#ff2200');
           shake(this,0.004+dmg*0.00015,120);
@@ -989,6 +989,7 @@ class GameScene extends Phaser.Scene {
   applyWeapon() {
     const d=WEAPON_DATA[STATE.weaponLv];
     this.patk=d.atk; this.prng=d.range; this.pspd=d.spd;
+    this._applyCraftBonuses();
   }
   applyArmor() {
     const prev=this.phm, d=ARMOR_DATA[STATE.armorLv];
@@ -999,23 +1000,24 @@ class GameScene extends Phaser.Scene {
   // ── INFINITE WAVE SYSTEM ──
   _waveSystem(time) {
     if(!areaUnlocked(4)) return;
-    const interval=Math.max(30000, 75000 - STATE.wave*2000);
+    const interval=Math.max(30000, 75000 - STATE.wave*1500);
     if(time-this.tWave<interval) return;
     this.tWave=time;
     STATE.wave++;
     const w=STATE.wave;
-    const mult=Math.pow(1.35,w);
+    const mult=Math.pow(1.20,w);
     const wCol=[0xff4400,0xaa00ff,0x00aaff,0xffaa00,0xff0088][(w-1)%5];
     const wName=['炎の魔物','紫の悪魔','水の精','砂漠の王','闇の使者'][(w-1)%5];
-    // Update wave enemy def
-    EDEFS.wave.hp   = Math.round(600*mult);
-    EDEFS.wave.atk  = Math.round(60*mult);
-    EDEFS.wave.gold = Math.round(220*mult);
-    EDEFS.wave.col  = wCol;
-    EDEFS.wave.name = `${wName}(W${w})`;
-    EDEFS.wave.spd  = Math.min(120, 70+w*3);
-    const count=Math.min(3+Math.floor(w*0.8),10);
-    for(let i=0;i<count;i++) this._spawn('wave');
+    const waveDef={...EDEFS.wave,
+      hp:   Math.round(600*mult),
+      atk:  Math.round(60*mult),
+      gold: Math.round(220*mult),
+      col:  wCol,
+      name: `${wName}(W${w})`,
+      spd:  Math.min(120, 70+w*3),
+    };
+    const count=Math.min(2+Math.floor(w*0.4),6);
+    for(let i=0;i<count;i++) this._spawn('wave',waveDef);
 
     this.scene.get('UIScene')?.notify(`⚡ WAVE ${w}: ${wName} ×${count}体出現！`,'#ff6644',3500);
     snd('unlock');
@@ -1248,6 +1250,7 @@ class UIScene extends Phaser.Scene {
   }
 
   _upgrade(tag,bg,bx,by) {
+    if(this.paused) return;
     const gs=this.scene.get('GameScene');
     if(!gs) return;
 
@@ -1326,9 +1329,9 @@ class UIScene extends Phaser.Scene {
     });
 
     const crafts=[
-      { label:'🥩 猛訓練',  sub:'肉10 → ATK+20',       type:'meat',  cost:10, statKey:'craftAtk',  max:5, desc:'ATK+20' },
-      { label:'🫧 要塞化',   sub:'皮15 → 採集+20%',     type:'skin',  cost:15, statKey:'craftCol',  max:3, desc:'採集+20%' },
-      { label:'💎 魔法強化', sub:'魔石5 → バースト+50%', type:'gem',   cost:5,  statKey:'craftBurst',max:3, desc:'バースト+50%' },
+      { label:'🥩 猛訓練',  sub:'肉7 → ATK+20',        type:'meat',  cost:7,  statKey:'craftAtk',  max:5, desc:'ATK+20' },
+      { label:'🫧 要塞化',   sub:'皮10 → 採集+20%',    type:'skin',  cost:10, statKey:'craftCol',  max:3, desc:'採集+20%' },
+      { label:'💎 魔法強化', sub:'魔石3 → バースト+50%',type:'gem',   cost:3,  statKey:'craftBurst',max:3, desc:'バースト+50%' },
     ];
 
     this.craftBtns=[];
@@ -1351,6 +1354,7 @@ class UIScene extends Phaser.Scene {
   }
 
   _toggleCraft() {
+    if(this.paused) return;
     this.showCraft=!this.showCraft;
     [this.craftBg,this.craftTitle,this.craftHint].forEach(o=>o?.setVisible(this.showCraft));
     this.craftBtns.forEach(({bg,lbl,sub,lvTx,cr})=>{
@@ -1393,6 +1397,7 @@ class UIScene extends Phaser.Scene {
   }
 
   _toggleStats() {
+    if(this.paused) return;
     this.showStats=!this.showStats;
     [this.statsBg,this.statsTxt,this.statsHint].forEach(o=>o.setVisible(this.showStats));
     if(this.showStats) this._refreshStats();
@@ -1530,7 +1535,7 @@ class UIScene extends Phaser.Scene {
     const t=this.add.text(GW/2, HUD_H+28, msg, {
       fontSize:'17px', fill:color, stroke:'#000', strokeThickness:4,
       backgroundColor:'#000000aa', padding:{x:14,y:7}, align:'center'
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(9200);
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(10000);
     this._notifyTxt=t;
     this._notifyTween=this.tweens.add({
       targets:t, y:t.y-28, alpha:0, duration:900, delay:duration,
