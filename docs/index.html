@@ -173,9 +173,11 @@ function shadow(scene, x, y, w, h) {
 }
 
 function floatTxt(scene, x, y, msg, col='#ffff00') {
-  const t = scene.add.text(x, y, msg, {fontSize:'14px',fill:col,stroke:'#000',strokeThickness:3})
-    .setOrigin(0.5).setDepth(9999);
-  scene.tweens.add({targets:t, y:y-46, alpha:0, duration:950, onComplete:()=>t.destroy()});
+  const cam=scene.cameras?.main;
+  const sx=cam?x-cam.scrollX:x, sy=cam?y-cam.scrollY:y;
+  const t = scene.add.text(sx, sy, msg, {fontSize:'14px',fill:col,stroke:'#000',strokeThickness:3})
+    .setOrigin(0.5).setScrollFactor(0).setDepth(9999);
+  scene.tweens.add({targets:t, y:sy-46, alpha:0, duration:950, onComplete:()=>t.destroy()});
 }
 
 function shake(scene, i=0.005, d=130) {
@@ -666,7 +668,7 @@ class GameScene extends Phaser.Scene {
       floatTxt(this,d.x,d.y-22,`+1 ${labels[t]||t}`,'#ffbbbb');
       snd('collect');
       d.destroy();
-      this.dropItems.splice(this.dropItems.indexOf(d),1);
+      this.dropItems=this.dropItems.filter(x=>x!==d);
     });
     return true;
   }
@@ -827,7 +829,8 @@ class GameScene extends Phaser.Scene {
     const toRm=this.coins.filter(c=>Math.hypot(c.x-px,c.y-py)<62);
     if(toRm.length){
       const total=toRm.reduce((s,c)=>s+(c.goldAmt||0),0);
-      toRm.forEach(c=>{c.destroy();this.coins.splice(this.coins.indexOf(c),1);});
+      toRm.forEach(c=>c.destroy());
+      this.coins=this.coins.filter(c=>!toRm.includes(c));
       floatTxt(this,px,py-38,`+${total}G`,'#ffd700');
       snd('coin');
       this.tCol=time; return;
@@ -933,6 +936,7 @@ class GameScene extends Phaser.Scene {
         const ang=Math.atan2(this.pl.y-CY,this.pl.x-CX);
         const lim=AREA_DATA[na-1].r-70;
         this.pl.setPosition(CX+Math.cos(ang)*lim,CY+Math.sin(ang)*lim);
+        this.pl.body.setVelocity(0,0);
         floatTxt(this,this.pl.x,this.pl.y-55,'🔒 エリア未解放！','#ff8844');
       } else {
         this.curArea=na;
@@ -1245,6 +1249,7 @@ class UIScene extends Phaser.Scene {
 
   _upgrade(tag,bg,bx,by) {
     const gs=this.scene.get('GameScene');
+    if(!gs) return;
 
     if(tag==='weapon'){
       const n=STATE.weaponLv+1;
@@ -1273,7 +1278,7 @@ class UIScene extends Phaser.Scene {
       if(STATE.gold<bd.goldCost||STATE.wood<bd.woodCost){this._err(bg,bx,by);return;}
       STATE.gold-=bd.goldCost; STATE.wood-=bd.woodCost; STATE.baseLv=n;
       this.notify(`🏠 拠点強化: ${bd.name}  再生×${bd.regen}`,'#44ff44',2000);
-      if(n>=1) gs.unlockArea(2);
+      if(n===1) gs.unlockArea(2);
     }
 
     this.tweens.add({targets:bg,scaleX:1.08,scaleY:1.08,duration:75,yoyo:true});
