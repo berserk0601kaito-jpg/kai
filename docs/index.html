@@ -508,6 +508,7 @@ class GameScene extends Phaser.Scene {
     this.input.on('pointerdown', ptr => {
       if (ptr.y <= HUD_H || ptr.y >= GH - PANEL_H) return;
       if (ptr.x < GW * 0.35) return; // VJoy zone on left
+      if ((STATE.craftBurst||0)>0 && ptr.y>=GH-PANEL_H-50 && Math.abs(ptr.x-GW/2)<50) return;
       const cam = this.cameras.main;
       const wx = cam.scrollX + (ptr.x - cam.x);
       const wy = cam.scrollY + (ptr.y - cam.y);
