@@ -906,7 +906,7 @@ class GameScene extends Phaser.Scene {
         }
       } else {
         e.wanderT=Math.max(0,e.wanderT-delta);
-        if(e.wanderT===0){e.wanderT=Phaser.Math.Between(1500,4000);e.wanderA=Math.random()*Math.PI*2;}
+        if(e.wanderT<=0){e.wanderT=Phaser.Math.Between(1500,4000);e.wanderA=Math.random()*Math.PI*2;}
         e.ph.body.setVelocity(Math.cos(e.wanderA)*e.d.spd*0.33,Math.sin(e.wanderA)*e.d.spd*0.33);
       }
       e.sync();
@@ -1022,12 +1022,12 @@ class GameScene extends Phaser.Scene {
   // ── INFINITE WAVE SYSTEM ──
   _waveSystem(time) {
     if(!areaUnlocked(4)) return;
-    const interval=Math.max(30000, 75000 - STATE.wave*1500);
+    const interval=Math.max(45000, 90000 - STATE.wave*1500);
     if(time-this.tWave<interval) return;
     this.tWave=time;
     STATE.wave++;
     const w=STATE.wave;
-    const mult=Math.pow(1.20,w);
+    const mult=Math.pow(1.15,w);
     const wCol=[0xff4400,0xaa00ff,0x00aaff,0xffaa00,0xff0088][(w-1)%5];
     const wName=['炎の魔物','紫の悪魔','水の精','砂漠の王','闇の使者'][(w-1)%5];
     const waveDef={...EDEFS.wave,
@@ -1230,7 +1230,7 @@ class UIScene extends Phaser.Scene {
       .setOrigin(0.5).setScrollFactor(0).setDepth(1006);
     mbg.on('pointerdown',()=>{
       muted=!muted;
-      if(_bgm) _bgm.master.gain.setTargetAtTime(muted?0:0.18,ac().currentTime,0.5);
+      const ctx2=ac(); if(_bgm&&ctx2) _bgm.master.gain.setTargetAtTime(muted?0:0.18,ctx2.currentTime,0.5);
       mt.setText(muted?'🔇 BGM':'🔊 BGM');
     });
     mbg.on('pointerover',()=>mbg.setAlpha(0.7)); mbg.on('pointerout',()=>mbg.setAlpha(1));
