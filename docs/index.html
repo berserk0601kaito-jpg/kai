@@ -1020,6 +1020,7 @@ class GameScene extends Phaser.Scene {
   _dead() {
     this.php=Math.round(this.phm*0.3);
     this.pl.setPosition(CX,CY);
+    this.moveTarget=null;
     this.invincibleUntil=this.time.now+5000;
     this.combo=0; this.tCombo=0;
     floatTxt(this,CX,CY-65,'💀 気絶！拠点へ帰還...','#ff8800');
