@@ -1024,6 +1024,7 @@ class GameScene extends Phaser.Scene {
     this.moveTarget=null;
     this.invincibleUntil=this.time.now+5000;
     this.combo=0; this.tCombo=0;
+    if(this.comboLabel){ this.comboLabel.destroy(); this.comboLabel=null; }
     floatTxt(this,CX,CY-65,'💀 気絶！拠点へ帰還...','#ff8800');
     shake(this,0.016,320);
     snd('die');
