@@ -255,9 +255,9 @@ class Rock {
 // ENEMY
 // ═══════════════════════════════════════════
 class Enemy {
-  constructor(scene, type, x, y) {
+  constructor(scene, type, x, y, customDef=null) {
     this.scene=scene; this.type=type;
-    const d=EDEFS[type]; this.d=d;
+    const d=customDef||EDEFS[type]; this.d=d;
     this.hp=d.hp; this.maxHp=d.hp; this.alive=true;
     this.atkCd=0; this.wanderT=Phaser.Math.Between(500,2500); this.wanderA=Math.random()*Math.PI*2;
 
@@ -593,7 +593,7 @@ class GameScene extends Phaser.Scene {
       const r=inner+Math.random()*(outer-inner);
       const x=CX+Math.cos(angle)*r, y=CY+Math.sin(angle)*r;
       if(x>65&&x<WW-65&&y>65&&y<WH-65){
-        this.enemies.push(new Enemy(this,type,x,y)); return;
+        this.enemies.push(new Enemy(this,type,x,y,customDef)); return;
       }
     }
   }
@@ -794,7 +794,7 @@ class GameScene extends Phaser.Scene {
     }
     if(!best) return;
     this.tAtk=time;
-    const dmg=Math.max(1,this.patk-(best.d.def||0));
+    const dmg=Math.max(1,Math.round(this.patk*100/(100+(best.d.def||0))));
     best.hit(dmg);
     best.sync();
     floatTxt(this,best.px,best.py-22,`-${dmg}`,'#ff5555');
