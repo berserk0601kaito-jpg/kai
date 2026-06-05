@@ -880,7 +880,7 @@ class GameScene extends Phaser.Scene {
         STATE.stone=(STATE.stone||0)+1; r.stone--;
         floatTxt(this,r.x,r.y-32,'🪨 +1','#bbbbff');
         snd('collect');
-        if(r.stone<=0) r.setDepleted(true);
+        if(r.stone<=0){r.setDepleted(true);this.respawnQ.push({obj:r,at:time+22000});}
         this.tCol=time; return;
       }
     }
@@ -924,7 +924,9 @@ class GameScene extends Phaser.Scene {
     for(let i=this.respawnQ.length-1;i>=0;i--){
       if(time>=this.respawnQ[i].at){
         const t=this.respawnQ[i].obj;
-        t.wood=t.woodMax; t.setDepleted(false);
+        if(t.woodMax!==undefined) t.wood=t.woodMax;
+        if(t.stoneMax!==undefined) t.stone=t.stoneMax;
+        t.setDepleted(false);
         this.respawnQ.splice(i,1);
       }
     }
