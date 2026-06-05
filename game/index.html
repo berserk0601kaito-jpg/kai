@@ -78,7 +78,8 @@ function startBGM() {
 
 function stopBGM() {
   if (!_bgm) return;
-  try { _bgm.nodes.forEach(n=>{ n.osc.stop(); n.lfo?.stop(); }); _bgm.master.disconnect(); } catch(e){}
+  _bgm.nodes.forEach(n=>{ try{n.osc.stop();}catch(e){} try{n.lfo?.stop();}catch(e){} });
+  try{_bgm.master.disconnect();}catch(e){}
   _bgm = null;
 }
 
@@ -444,6 +445,7 @@ class GameScene extends Phaser.Scene {
   constructor(){super({key:'GameScene'});}
 
   create() {
+    _floatTxtActive=0;
     this.physics.world.setBounds(0,0,WW,WH);
     this._ground();
     this._areaBorders();
