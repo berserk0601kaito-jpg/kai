@@ -159,7 +159,7 @@ const STATE = {
 };
 
 const save  = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(STATE)); } catch(e){} };
-const load  = () => { try { const r=localStorage.getItem(SAVE_KEY); if(r){ Object.assign(STATE, JSON.parse(r)); if(!Array.isArray(STATE.areas)) STATE.areas=[1]; } return !!r; } catch(e){ return false; } };
+const load  = () => { try { const r=localStorage.getItem(SAVE_KEY); if(r){ Object.assign(STATE, JSON.parse(r)); if(!Array.isArray(STATE.areas)) STATE.areas=[1]; STATE.weaponLv=Math.max(0,Math.min(STATE.weaponLv||0,WEAPON_DATA.length-1)); STATE.armorLv=Math.max(0,Math.min(STATE.armorLv||0,ARMOR_DATA.length-1)); STATE.baseLv=Math.max(0,Math.min(STATE.baseLv||0,BASE_DATA.length-1)); } return !!r; } catch(e){ return false; } };
 const HS_KEY='fsurvival_hs';
 const saveHS= () => { try { const prev=JSON.parse(localStorage.getItem(HS_KEY)||'{}'); const best={kills:Math.max(prev.kills||0,STATE.kills),wave:Math.max(prev.wave||0,STATE.wave),totalGold:Math.max(prev.totalGold||0,STATE.totalGold),playTime:Math.max(prev.playTime||0,STATE.playTime||0)}; localStorage.setItem(HS_KEY,JSON.stringify(best)); } catch(e){} };
 const loadHS= () => { try { return JSON.parse(localStorage.getItem(HS_KEY)||'{}'); } catch(e){ return {}; } };
@@ -1129,7 +1129,7 @@ class GameScene extends Phaser.Scene {
   // ── AUTO SAVE ──
   _autoSave(time) {
     if(time-this.tSave>30000){
-      const dt=Math.round((time-this.tSave)/1000); this.tSave=time; STATE.playTime=(STATE.playTime||0)+dt; save();
+      const dt=Math.min(Math.round((time-this.tSave)/1000),60); this.tSave=time; STATE.playTime=(STATE.playTime||0)+dt; save();
     }
   }
 
