@@ -595,8 +595,8 @@ class GameScene extends Phaser.Scene {
       const r=rng.realInRange(90,3380);
       const x=CX+Math.cos(angle)*r, y=CY+Math.sin(angle)*r;
       if(x<65||x>WW-65||y<65||y>WH-65) continue;
-      if(Math.hypot(x-CX,y-CY)<130) continue;
       const dist=Math.hypot(x-CX,y-CY);
+      if(dist<130) continue;
       const aid=dist<900?1:dist<1700?2:dist<2500?3:4;
       const isRock=rng.frac()<(aid>=3?0.45:0.22);
       if(isRock) this.rocks.push(new Rock(this,x,y,aid));
@@ -915,7 +915,7 @@ class GameScene extends Phaser.Scene {
   _enemies(time,delta) {
     const px=this.pl.x, py=this.pl.y;
     for(const e of this.enemies){
-      if(!e.alive){e.sync();continue;}
+      if(!e.alive) continue;
       const dist=Math.hypot(e.px-px,e.py-py);
       if(dist<e.d.aggro){
         const ang=Math.atan2(py-e.py,px-e.px);
