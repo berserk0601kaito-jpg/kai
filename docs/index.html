@@ -968,7 +968,7 @@ class GameScene extends Phaser.Scene {
       if(!areaUnlocked(na)){
         // push back
         const ang=Math.atan2(this.pl.y-CY,this.pl.x-CX);
-        const lim=AREA_DATA[na-1].r-70;
+        const lim=(na>1?AREA_DATA[na-2].r:0)-20;
         this.pl.setPosition(CX+Math.cos(ang)*lim,CY+Math.sin(ang)*lim);
         this.pl.body.setVelocity(0,0);
         floatTxt(this,this.pl.x,this.pl.y-55,'🔒 エリア未解放！','#ff8844');
