@@ -134,6 +134,7 @@ const EDEFS = {
   boar:   { name:'イノシシ', hp:160,  atk:32,  spd:82,  aggro:230, gold:55,  drop:'meat', col:0x8b4513, w:38, h:28, area:3, max:7,  rsec:50 },
   goblin: { name:'ゴブリン', hp:90,   atk:25,  spd:95,  aggro:240, gold:40,  drop:'skin', col:0x669933, w:26, h:30, area:3, max:8,  rsec:42 },
   dragon: { name:'ドラゴン', hp:1200, atk:110, spd:62,  aggro:380, gold:350, drop:'gem',  col:0xcc2200, w:72, h:62, area:4, max:3,  rsec:120 },
+  wave:   { name:'???',     hp:600,  atk:60,  spd:70,  aggro:320, gold:220, drop:'gem',  col:0xff4400, w:55, h:48, area:4, max:0,  rsec:999 },
 };
 
 // ═══════════════════════════════════════════
@@ -143,7 +144,7 @@ const STATE = {
   gold:0, wood:0, meat:0, skin:0, gem:0, stone:0,
   weaponLv:0, armorLv:0, baseLv:0,
   kills:0, totalGold:0,
-  areas:[1],
+  areas:[1], wave:0,
   playTime:0,
 };
 
@@ -415,8 +416,9 @@ class GameScene extends Phaser.Scene {
     this.cameras.main.setViewport(0,HUD_H,GW,GH-HUD_H-PANEL_H);
 
     this.tAtk=0; this.tCol=0; this.tRgn=0; this.tSave=0; this.tAreaChk=0;
-    this.tPassive=0; this._lastMilestone=0;
+    this.tPassive=0; this.tWave=0; this._lastMilestone=0;
     this.curArea=1; this.moveTarget=null;
+    this.dropItems=[];
     this.lockMkrs=[];
     this._makeLockMarkers();
 
@@ -565,15 +567,42 @@ class GameScene extends Phaser.Scene {
   onEnemyDied(e) {
     STATE.gold+=e.d.gold; STATE.totalGold+=e.d.gold; STATE.kills++;
     this.spawnGold(e.px,e.py,e.d.gold);
-    if(e.d.drop){
-      STATE[e.d.drop]=(STATE[e.d.drop]||0)+1;
-      const label={meat:'🥩 肉',skin:'🫧 皮',gem:'💎 魔石'};
-      floatTxt(this,e.px,e.py-18,`+1 ${label[e.d.drop]||e.d.drop}`,'#ffaaaa');
-    }
-    // Queue respawn
-    if(areaUnlocked(e.d.area)){
+    if(e.d.drop) this._spawnDropItem(e.px,e.py,e.d.drop);
+    // Queue respawn (not for wave type)
+    if(e.type!=='wave' && areaUnlocked(e.d.area)){
       this.enemyQ.push({type:e.type,at:this.time.now+e.d.rsec*1000});
     }
+  }
+
+  _spawnDropItem(x,y,type) {
+    const cfg={meat:{col:0xff6666,r:6,label:'🥩'},skin:{col:0xcc9944,r:6,label:'🫧'},gem:{col:0xaa44ff,r:7,label:'💎'}};
+    const c=cfg[type]||{col:0xffffff,r:5,label:'?'};
+    const scatter=16;
+    const ix=x+Phaser.Math.Between(-scatter,scatter), iy=y+Phaser.Math.Between(-scatter,scatter);
+    const dot=this.add.circle(ix,iy,c.r,c.col);
+    dot.setDepth(490).setStrokeStyle(1.5,0xffffff);
+    dot.dropType=type;
+    // Bounce in
+    this.tweens.add({targets:dot,y:iy-18,duration:200,ease:'Quad.Out',
+      onComplete:()=>this.tweens.add({targets:dot,y:iy,duration:160,ease:'Bounce.Out'})});
+    // Pulse
+    this.tweens.add({targets:dot,scaleX:1.25,scaleY:1.25,duration:600,yoyo:true,repeat:-1,ease:'Sine.InOut'});
+    this.dropItems.push(dot);
+  }
+
+  _collectDropItems(px,py) {
+    const toRm=this.dropItems.filter(d=>Math.hypot(d.x-px,d.y-py)<58);
+    if(!toRm.length) return false;
+    toRm.forEach(d=>{
+      const t=d.dropType;
+      STATE[t]=(STATE[t]||0)+1;
+      const labels={meat:'🥩 肉',skin:'🫧 皮',gem:'💎 魔石'};
+      floatTxt(this,d.x,d.y-22,`+1 ${labels[t]||t}`,'#ffbbbb');
+      snd('collect');
+      d.destroy();
+      this.dropItems.splice(this.dropItems.indexOf(d),1);
+    });
+    return true;
   }
 
   // ── PARTICLES ──
@@ -679,6 +708,9 @@ class GameScene extends Phaser.Scene {
     const px=this.pl.x, py=this.pl.y;
     const bonus=BASE_DATA[STATE.baseLv].bonus;
     const range=65*bonus;
+
+    // Drop items (meat/skin/gem on ground)
+    if (this._collectDropItems(px,py)) { this.tCol=time; return; }
 
     // Coins
     const toRm=this.coins.filter(c=>Math.hypot(c.x-px,c.y-py)<62);
@@ -841,6 +873,36 @@ class GameScene extends Phaser.Scene {
     this.php=Math.min(this.php+(d.maxHp-prev),d.maxHp);
   }
 
+  // ── INFINITE WAVE SYSTEM ──
+  _waveSystem(time) {
+    if(!areaUnlocked(4)) return;
+    const interval=Math.max(30000, 75000 - STATE.wave*2000);
+    if(time-this.tWave<interval) return;
+    this.tWave=time;
+    STATE.wave++;
+    const w=STATE.wave;
+    const mult=Math.pow(1.35,w);
+    const wCol=[0xff4400,0xaa00ff,0x00aaff,0xffaa00,0xff0088][(w-1)%5];
+    const wName=['炎の魔物','紫の悪魔','水の精','砂漠の王','闇の使者'][(w-1)%5];
+    // Update wave enemy def
+    EDEFS.wave.hp   = Math.round(600*mult);
+    EDEFS.wave.atk  = Math.round(60*mult);
+    EDEFS.wave.gold = Math.round(220*mult);
+    EDEFS.wave.col  = wCol;
+    EDEFS.wave.name = `${wName}(W${w})`;
+    EDEFS.wave.spd  = Math.min(120, 70+w*3);
+    const count=Math.min(3+Math.floor(w*0.8),10);
+    for(let i=0;i<count;i++) this._spawn('wave');
+
+    // Banner
+    const t=this.add.text(this.pl.x,this.pl.y-100,`⚡ WAVE ${w}: ${wName}×${count}`,{
+      fontSize:'20px',fill:'#ff4444',stroke:'#000',strokeThickness:5,
+      backgroundColor:'#00000088',padding:{x:10,y:5}
+    }).setOrigin(0.5).setDepth(9600);
+    this.tweens.add({targets:t,y:t.y-50,alpha:0,duration:3000,delay:1500,onComplete:()=>t.destroy()});
+    snd('unlock');
+  }
+
   // ── PASSIVE INCOME ──
   _passive(time) {
     const rate=BASE_DATA[STATE.baseLv].passive;
@@ -884,6 +946,7 @@ class GameScene extends Phaser.Scene {
     this._areaCheck(time);
     this._passive(time);
     this._milestones();
+    this._waveSystem(time);
     this._updateRangeCircle();
     this._autoSave(time);
   }
@@ -1075,7 +1138,8 @@ class UIScene extends Phaser.Scene {
     this.wdTxt.setText( `🌲 ${STATE.wood}`);
     this.resTxt.setText(`🥩${STATE.meat||0}  🫧${STATE.skin||0}  💎${STATE.gem||0}  🪨${STATE.stone||0}`);
     this.gearTx.setText(`⚔${WEAPON_DATA[STATE.weaponLv].name}  🛡${ARMOR_DATA[STATE.armorLv].name}`);
-    this.staTxt.setText(`撃破:${STATE.kills}  エリア:${gs.curArea}/4`);
+    const waveStr=STATE.wave>0?`  WAVE:${STATE.wave}`:'';
+    this.staTxt.setText(`撃破:${STATE.kills}  エリア:${gs.curArea}/4${waveStr}`);
     const passive=BASE_DATA[STATE.baseLv].passive;
     this.passiveTx.setText(passive>0?`🏠 +${passive}G/5秒`:'');
 
