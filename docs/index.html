@@ -1194,12 +1194,19 @@ class UIScene extends Phaser.Scene {
       vj.dy=(dy/dist)*(clamp/R);
       this.vjNub.setPosition(vj.cx+vj.dx*R, vj.cy+vj.dy*R);
     });
-    this.input.on('pointerup',(ptr)=>{
+    const vjReset=()=>{
       const vj=this._vjInput;
-      if(ptr.id!==vj.pid) return;
       vj.active=false; vj.dx=0; vj.dy=0;
       this.vjNub.setPosition(defX,defY);
       this.vjBase.setPosition(defX,defY);
+    };
+    this.input.on('pointerup',(ptr)=>{
+      if(ptr.id!==this._vjInput.pid) return;
+      vjReset();
+    });
+    this.input.on('pointercancel',(ptr)=>{
+      if(ptr.id!==this._vjInput.pid) return;
+      vjReset();
     });
 
     // ── Mobile icon buttons: ⏸ Stats Craft ──
@@ -1362,8 +1369,10 @@ class UIScene extends Phaser.Scene {
   _togglePause() {
     this.paused=!this.paused;
     const gs=this.scene.get('GameScene');
-    if(this.paused){ gs?.scene.pause(); }
-    else            { gs?.scene.resume(); }
+    if(this.paused){
+      gs?.scene.pause();
+      if(this._vjInput){this._vjInput.active=false;this._vjInput.dx=0;this._vjInput.dy=0;}
+    } else { gs?.scene.resume(); }
     [this.pauseBg,this.pauseTx,this.pauseHint,this.pauseHomeBg,this.pauseHomeTx].forEach(o=>o?.setVisible(this.paused));
   }
 
