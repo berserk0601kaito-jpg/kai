@@ -678,8 +678,8 @@ class GameScene extends Phaser.Scene {
       }});
     }
     if(e.d.drop) this._spawnDropItem(e.px,e.py,e.d.drop);
-    // Queue respawn (not for wave type)
-    if(e.type!=='wave' && areaUnlocked(e.d.area)){
+    // Queue respawn (not for wave type); area unlock checked at spawn time
+    if(e.type!=='wave'){
       this.enemyQ.push({type:e.type,at:this.time.now+e.d.rsec*1000});
     }
   }
@@ -963,9 +963,11 @@ class GameScene extends Phaser.Scene {
     for(let i=this.enemyQ.length-1;i>=0;i--){
       if(time>=this.enemyQ[i].at){
         const {type}=this.enemyQ[i];
-        const cnt=this.enemies.filter(e=>e.type===type&&e.alive).length;
-        if(cnt<EDEFS[type].max) this._spawn(type);
-        this.enemyQ.splice(i,1);
+        if(areaUnlocked(EDEFS[type].area)){
+          const cnt=this.enemies.filter(e=>e.type===type&&e.alive).length;
+          if(cnt<EDEFS[type].max) this._spawn(type);
+          this.enemyQ.splice(i,1);
+        }
       }
     }
   }
