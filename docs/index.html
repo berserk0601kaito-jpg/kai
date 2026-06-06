@@ -1080,8 +1080,10 @@ class GameScene extends Phaser.Scene {
     const count=Math.min(2+Math.floor(w*0.4),6,Math.max(0,10-existing));
     for(let i=0;i<count;i++) this._spawn('wave',waveDef);
 
-    this.scene.get('UIScene')?.notify(`⚡ WAVE ${w}: ${wName} ×${count}体出現！`,'#ff6644',3500);
-    snd('unlock');
+    if(count>0){
+      this.scene.get('UIScene')?.notify(`⚡ WAVE ${w}: ${wName} ×${count}体出現！`,'#ff6644',3500);
+      snd('unlock');
+    }
   }
 
   // ── DAY/NIGHT CYCLE ──
