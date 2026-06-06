@@ -671,7 +671,7 @@ class GameScene extends Phaser.Scene {
         fontSize:'15px',fill:'#ffaa00',stroke:'#000',strokeThickness:3
       }).setOrigin(0.5).setScrollFactor(0).setDepth(9500);
       this.comboLabel=cl;
-      this.tweens.add({targets:cl,y:cl.y-30,duration:2500,onComplete:()=>{
+      this.tweens.add({targets:cl,y:cl.y-30,duration:3000,onComplete:()=>{
         cl.destroy();
         if(this.comboLabel===cl) this.comboLabel=null;
       }});
@@ -1122,9 +1122,8 @@ class GameScene extends Phaser.Scene {
   // ── KILL MILESTONES ──
   _milestones() {
     const thresholds=[10,25,50,100,200,500,1000];
-    const prev=this._lastMilestone||0;
     for(const th of thresholds){
-      if(STATE.kills>=th&&prev<th){
+      if(STATE.kills>=th&&(this._lastMilestone||0)<th){
         this._lastMilestone=th;
         const bonus=th*5;
         STATE.gold+=bonus; STATE.totalGold+=bonus;
