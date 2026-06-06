@@ -409,9 +409,11 @@ class TitleScene extends Phaser.Scene {
   }
 
   _showHowTo() {
+    const objs=[];
+    const add=o=>{objs.push(o);return o;};
     const ow=560,oh=390,ox=(GW-ow)/2,oy=(GH-oh)/2;
-    const bg=this.add.rectangle(GW/2,GH/2,ow,oh,0x060e04,0.97).setStrokeStyle(2,0x44aa44);
-    this.add.text(GW/2,oy+22,'遊び方',{fontSize:'20px',fill:'#88ff88',stroke:'#000',strokeThickness:4}).setOrigin(0.5);
+    add(this.add.rectangle(GW/2,GH/2,ow,oh,0x060e04,0.97).setStrokeStyle(2,0x44aa44));
+    add(this.add.text(GW/2,oy+22,'遊び方',{fontSize:'20px',fill:'#88ff88',stroke:'#000',strokeThickness:4}).setOrigin(0.5));
     const lines=[
       ['移動',    'WASD / 矢印キー\nスマホ: 左下ジョイスティック または 右側タップ'],
       ['採集',    '木・岩に近づくと自動で採集（木材・石）'],
@@ -423,13 +425,13 @@ class TitleScene extends Phaser.Scene {
     ];
     let ly=oy+55;
     lines.forEach(([k,v])=>{
-      this.add.text(ox+20,ly,k,{fontSize:'12px',fill:'#88ff88',fontStyle:'bold'});
-      this.add.text(ox+120,ly,v,{fontSize:'11px',fill:'#cccccc',wordWrap:{width:ow-140}});
+      add(this.add.text(ox+20,ly,k,{fontSize:'12px',fill:'#88ff88',fontStyle:'bold'}));
+      add(this.add.text(ox+120,ly,v,{fontSize:'11px',fill:'#cccccc',wordWrap:{width:ow-140}}));
       ly+=v.split('\n').length*17+8;
     });
-    const closeBg=this.add.rectangle(GW/2,oy+oh-26,120,32,0x1a3a1a).setStrokeStyle(1,0x44aa44).setInteractive({useHandCursor:true});
-    this.add.text(GW/2,oy+oh-26,'閉じる',{fontSize:'14px',fill:'#ffffff'}).setOrigin(0.5);
-    closeBg.on('pointerdown',()=>{[bg,closeBg,...this.children.list.slice(-20)].forEach(o=>{try{o.destroy();}catch(e){}});});
+    const closeBg=add(this.add.rectangle(GW/2,oy+oh-26,120,32,0x1a3a1a).setStrokeStyle(1,0x44aa44).setInteractive({useHandCursor:true}));
+    add(this.add.text(GW/2,oy+oh-26,'閉じる',{fontSize:'14px',fill:'#ffffff'}).setOrigin(0.5));
+    closeBg.on('pointerdown',()=>{objs.forEach(o=>{try{o.destroy();}catch(e){}});});
   }
 
   _btn(x,y,w,h,label,bg,border,cb){
