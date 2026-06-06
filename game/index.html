@@ -165,7 +165,7 @@ const load  = () => { try { const r=localStorage.getItem(SAVE_KEY); if(r){ Objec
 const HS_KEY='fsurvival_hs';
 const saveHS= () => { try { const prev=JSON.parse(localStorage.getItem(HS_KEY)||'{}'); const best={kills:Math.max(prev.kills||0,STATE.kills),wave:Math.max(prev.wave||0,STATE.wave),totalGold:Math.max(prev.totalGold||0,STATE.totalGold),playTime:Math.max(prev.playTime||0,STATE.playTime||0)}; localStorage.setItem(HS_KEY,JSON.stringify(best)); } catch(e){} };
 const loadHS= () => { try { return JSON.parse(localStorage.getItem(HS_KEY)||'{}'); } catch(e){ return {}; } };
-const hasSave = () => !!localStorage.getItem(SAVE_KEY);
+const hasSave = () => { try { const r=localStorage.getItem(SAVE_KEY); return !!(r&&JSON.parse(r)); } catch(e){ return false; } };
 const areaUnlocked = id => STATE.areas.includes(id);
 
 function distToArea(dist) {
