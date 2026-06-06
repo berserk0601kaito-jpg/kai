@@ -1140,6 +1140,7 @@ class GameScene extends Phaser.Scene {
   }
 
   update(time,delta) {
+    this.lastTime=time;
     this._move();
     this._attack(time);
     this._collect(time);
@@ -1610,7 +1611,7 @@ class UIScene extends Phaser.Scene {
     this.burstBg?.setVisible(!!burstUnlocked);
     this.burstTx?.setVisible(!!burstUnlocked);
     if(gs2&&burstUnlocked){
-      const cd=Math.max(0,Math.ceil((20000-(this.game.loop.time-gs2.burstCd))/1000));
+      const cd=Math.max(0,Math.ceil((20000-((gs2.lastTime||0)-gs2.burstCd))/1000));
       this.burstCdTx?.setText(cd>0?`${cd}秒`:'準備OK').setVisible(true);
     } else { this.burstCdTx?.setVisible(false); }
 
