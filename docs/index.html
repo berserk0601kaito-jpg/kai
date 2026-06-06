@@ -577,8 +577,9 @@ class GameScene extends Phaser.Scene {
       {areaId:4,x:CX+2540,y:CY, text:'🔒 銀の鎧（防具Lv3）で解放'},
     ];
     for(const lk of locks){
-      const bg=this.add.rectangle(lk.x,lk.y-28,190,34,0x000000,0.75).setDepth(12);
-      const t =this.add.text(lk.x,lk.y-28,lk.text,{fontSize:'11px',fill:'#ffaa44',stroke:'#000',strokeThickness:2}).setOrigin(0.5).setDepth(13);
+      const v=!areaUnlocked(lk.areaId);
+      const bg=this.add.rectangle(lk.x,lk.y-28,190,34,0x000000,0.75).setDepth(12).setVisible(v);
+      const t =this.add.text(lk.x,lk.y-28,lk.text,{fontSize:'11px',fill:'#ffaa44',stroke:'#000',strokeThickness:2}).setOrigin(0.5).setDepth(13).setVisible(v);
       this.lockMkrs.push({areaId:lk.areaId,bg,t});
     }
   }
