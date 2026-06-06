@@ -1399,10 +1399,15 @@ class UIScene extends Phaser.Scene {
     }
     this.paused=!this.paused;
     const gs=this.scene.get('GameScene');
+    const ctx2=ac();
     if(this.paused){
       gs?.scene.pause();
       if(this._vjInput){this._vjInput.active=false;this._vjInput.dx=0;this._vjInput.dy=0;}
-    } else { gs?.scene.resume(); }
+      if(_bgm&&ctx2){this._bgmPauseGain=_bgm.master.gain.value;_bgm.master.gain.setTargetAtTime(0,ctx2.currentTime,0.3);}
+    } else {
+      gs?.scene.resume();
+      if(_bgm&&ctx2&&this._bgmPauseGain>0) _bgm.master.gain.setTargetAtTime(this._bgmPauseGain,ctx2.currentTime,0.3);
+    }
     [this.pauseBg,this.pauseTx,this.pauseHint,this.pauseHomeBg,this.pauseHomeTx].forEach(o=>o?.setVisible(this.paused));
   }
 
