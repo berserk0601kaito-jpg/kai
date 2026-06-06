@@ -47,9 +47,9 @@ def post_article(filepath):
 
     try:
         with urllib.request.urlopen(req) as resp:
-            print(f'✅ 投稿成功: {title} (status={resp.status})')
+            print(f'投稿成功: {title} (status={resp.status})')
     except Exception as e:
-        print(f'❌ 投稿失敗: {title} - {e}')
+        print(f'投稿失敗: {title} - {e}')
 
 if __name__ == '__main__':
     for filepath in sys.argv[1:]:
