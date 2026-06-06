@@ -1505,7 +1505,7 @@ class UIScene extends Phaser.Scene {
     const pt=Math.round((STATE.playTime||0)/60);
     const lines=[
       '─── ステータス ───',
-      `⚔ 武器: ${WEAPON_DATA[STATE.weaponLv].name}  ATK ${WEAPON_DATA[STATE.weaponLv].atk}`,
+      `⚔ 武器: ${WEAPON_DATA[STATE.weaponLv].name}  ATK ${WEAPON_DATA[STATE.weaponLv].atk+(STATE.craftAtk||0)*20}`,
       `🛡 防具: ${ARMOR_DATA[STATE.armorLv].name}  HP ${ARMOR_DATA[STATE.armorLv].maxHp}`,
       `🏠 拠点: ${BASE_DATA[STATE.baseLv].name}`,
       '',
