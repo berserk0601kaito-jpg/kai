@@ -1635,8 +1635,15 @@ class UIScene extends Phaser.Scene {
 
   // ── SCREEN-FIXED NOTIFICATION (called from GameScene) ──
   notify(msg, color='#ffffff', duration=3000) {
-    if(this._notifyTween) { this._notifyTween.stop(); this._notifyTween=null; }
-    if(this._notifyTxt)   { this._notifyTxt.destroy(); this._notifyTxt=null; }
+    this._notifyQ = this._notifyQ || [];
+    this._notifyQ.push({msg, color, duration});
+    if(this._notifyQ.length === 1) this._showNotify();
+  }
+
+  _showNotify() {
+    if(!this._notifyQ?.length) return;
+    const {msg, color, duration} = this._notifyQ[0];
+    if(this._notifyTxt) { this._notifyTxt.destroy(); this._notifyTxt=null; }
     const t=this.add.text(GW/2, HUD_H+28, msg, {
       fontSize:'17px', fill:color, stroke:'#000', strokeThickness:4,
       backgroundColor:'#000000aa', padding:{x:14,y:7}, align:'center'
@@ -1644,7 +1651,7 @@ class UIScene extends Phaser.Scene {
     this._notifyTxt=t;
     this._notifyTween=this.tweens.add({
       targets:t, y:t.y-28, alpha:0, duration:900, delay:duration,
-      onComplete:()=>{ t.destroy(); this._notifyTxt=null; this._notifyTween=null; }
+      onComplete:()=>{ t.destroy(); this._notifyTxt=null; this._notifyTween=null; this._notifyQ.shift(); this._showNotify(); }
     });
   }
 }
