@@ -53,7 +53,9 @@ document.addEventListener('pointerdown', ()=>{ try { ac()?.resume(); } catch(e){
 let _bgm = null;
 function startBGM() {
   const ctx = ac(); if (!ctx || _bgm) return;
-  const master = ctx.createGain(); master.gain.value = 0.18; master.connect(ctx.destination);
+  const master = ctx.createGain();
+  master.gain.value = localStorage.getItem('bgmMuted')==='true' ? 0 : 0.18;
+  master.connect(ctx.destination);
 
   // Low drone (A minor ambience)
   const freqs = [55, 110, 165, 220, 330];
@@ -1099,7 +1101,7 @@ class GameScene extends Phaser.Scene {
       r=lerp(80,50,mid); g=lerp(60,45,mid); b=lerp(100,120,mid);
     } else {           // Dawn
       const p=(t-0.85)/0.15;
-      r=lerp(50,255,p); g=lerp(45,200,p); b=lerp(120,180,p);
+      r=lerp(50,255,p); g=lerp(45,255,p); b=lerp(120,255,p);
     }
     this.cameras.main.setTint(Phaser.Display.Color.GetColor(r,g,b));
   }
@@ -1264,13 +1266,14 @@ class UIScene extends Phaser.Scene {
     this.add.text(GW/2,HUD_H-10,'[TAB]Stats  [C]Craft  [ESC]Pause',{fontSize:'9px',fill:'#335533'}).setOrigin(0.5).setScrollFactor(0).setDepth(1002);
 
     // Mute button
-    let muted=false;
+    let muted=localStorage.getItem('bgmMuted')==='true';
     const mbg=this.add.rectangle(GW-114,HUD_H-14,52,22,0x1a1a3a,0.92)
       .setScrollFactor(0).setDepth(1005).setStrokeStyle(1,0x4444aa).setInteractive({useHandCursor:true});
-    const mt=this.add.text(GW-114,HUD_H-14,'🔊 BGM',{fontSize:'10px',fill:'#aaaaff'})
+    const mt=this.add.text(GW-114,HUD_H-14,muted?'🔇 BGM':'🔊 BGM',{fontSize:'10px',fill:'#aaaaff'})
       .setOrigin(0.5).setScrollFactor(0).setDepth(1006);
     mbg.on('pointerdown',()=>{
       muted=!muted;
+      localStorage.setItem('bgmMuted',muted);
       const ctx2=ac(); if(_bgm&&ctx2) _bgm.master.gain.setTargetAtTime(muted?0:0.18,ctx2.currentTime,0.5);
       mt.setText(muted?'🔇 BGM':'🔊 BGM');
     });
