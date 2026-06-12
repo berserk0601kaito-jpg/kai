@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>星海の庭 〜 Stellar Garden 〜</title>
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    background: #06041a;
+    height: 100%;
+    overflow: hidden;
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+  }
+  #wrap {
+    height: 100%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  canvas {
+    display: block;
+    max-width: 100vw; max-height: 100vh;
+    border-radius: 6px;
+  }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="g"></canvas></div>
+<script>
+'use strict';
+
+// ============================================================
+// 星海の庭 〜 Stellar Garden 〜
+// 星屑を落として融合させ、大宇宙を目指す幻想パズル
+// 依存ライブラリなし・単一ファイル
+// ============================================================
+
+const W = 520, H = 800;
+const FIELD = { x: 40, y: 150, w: 440, h: 600 };
+const LINE_Y = FIELD.y + 14;          // この線より上に積み上がるとゲームオーバー
+const HOLD_Y = 100;                   // 持っている天体の表示高さ
+const GRAVITY = 1900;
+const cvs = document.getElementById('g');
+const ctx = cvs.getContext('2d');
+
+// 天体の進化チェーン
+const TIERS = [
+  { n: '星屑',   r: 15,  c1: '#fffbe0', c2: '#ffd76a', glow: '#ffe9a8', s: 1 },
+  { n: '流星',   r: 22,  c1: '#e8faff', c2: '#6fd3ff', glow: '#aee7ff', s: 3 },
+  { n: '彗星',   r: 30,  c1: '#ece6ff', c2: '#8f7bff', glow: '#c9bdff', s: 6 },
+  { n: '月',     r: 39,  c1: '#fff6dd', c2: '#f0c452', glow: '#ffe9a8', s: 10 },
+  { n: '惑星',   r: 50,  c1: '#defff0', c2: '#3ddc97', glow: '#9af5cd', s: 15 },
+  { n: '恒星',   r: 63,  c1: '#fff0dc', c2: '#ff9d4d', glow: '#ffcf9e', s: 21 },
+  { n: '超新星', r: 78,  c1: '#ffe3ee', c2: '#ff5c8a', glow: '#ffaec7', s: 28 },
+  { n: '星雲',   r: 94,  c1: '#f0e6ff', c2: '#b06cff', glow: '#d7b8ff', s: 36 },
+  { n: '銀河',   r: 112, c1: '#e0eeff', c2: '#4f8cff', glow: '#a8ccff', s: 45 },
+  { n: '銀河団', r: 131, c1: '#fff8d9', c2: '#ffc93c', glow: '#ffe9a0', s: 55 },
+  { n: '大宇宙', r: 150, c1: '#e6e0ff', c2: '#7c4dff', glow: '#b9a3ff', s: 66 },
+];
+const SPAWN_WEIGHTS = [30, 25, 20, 15, 10]; // 手札に来るのは星屑〜惑星
+
+// ---------- 状態 ----------
+let state = 'title';          // title | play | over
+let bodies = [];
+let particles = [];
+let floaters = [];            // 浮かぶスコア文字
+let shockwaves = [];
+let score = 0;
+let best = +(localStorage.getItem('stellar-garden-best') || 0);
+let maxTierReached = 0;
+let combo = 0, lastMergeAt = -99;
+let aimX = W / 2;
+let current = null;           // 持っている天体 {tier}
+let nextTier = 0;
+let dropCooldown = 0;
+let dangerTime = 0;
+let shake = 0;
+let time = 0;
+let bodyId = 0;
+let muted = localStorage.getItem('stellar-garden-mute') === '1';
+let uiClicked = false;
+let overAt = 0;
+
+// ---------- 背景の星空 ----------
+const stars = [];
+for (let i = 0; i < 130; i++) {
+  stars.push({
+    x: Math.random() * W, y: Math.random() * H,
+    r: 0.4 + Math.random() * 1.4,
+    p: Math.random() * Math.PI * 2,
+    sp: 0.5 + Math.random() * 2,
+  });
+}
+const nebulae = [];
+const NEB_COLORS = ['#3b1d6e', '#1d3a6e', '#5e1d6e', '#1d6e5a', '#6e1d3f'];
+for (let i = 0; i < 6; i++) {
+  nebulae.push({
+    x: Math.random() * W, y: Math.random() * H,
+    r: 120 + Math.random() * 160,
+    c: NEB_COLORS[i % NEB_COLORS.length],
+    dx: (Math.random() - 0.5) * 6,
+    dy: (Math.random() - 0.5) * 4,
+    p: Math.random() * Math.PI * 2,
+  });
+}
+let shootingStar = null;
+
+// ---------- サウンド（WebAudio 全合成）----------
+let AC = null, master = null;
+let bgmNext = 0, bgmStep = 0;
+const SCALE = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24];
+
+function ensureAudio() {
+  if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
+  try {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    master = AC.createGain();
+    master.gain.value = muted ? 0 : 1;
+    master.connect(AC.destination);
+    bgmNext = AC.currentTime + 0.3;
+  } catch (e) { AC = null; }
+}
+function setMuted(m) {
+  muted = m;
+  localStorage.setItem('stellar-garden-mute', m ? '1' : '0');
+  if (master) master.gain.value = m ? 0 : 1;
+}
+function tone(freq, dur, type, gain, when, attack) {
+  if (!AC) return;
+  const t = when || AC.currentTime;
+  const o = AC.createOscillator();
+  const g = AC.createGain();
+  o.type = type || 'sine';
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(gain, t + (attack || 0.01));
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(master);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+function sfxDrop() { tone(170, 0.12, 'sine', 0.12); tone(340, 0.06, 'sine', 0.05); }
+function sfxMerge(tier) {
+  const base = 261.6;
+  const f = base * Math.pow(2, SCALE[Math.min(tier, SCALE.length - 1)] / 12);
+  tone(f, 0.35, 'triangle', 0.14);
+  tone(f * 2, 0.25, 'sine', 0.07);
+  if (AC) tone(f * 1.5, 0.3, 'sine', 0.05, AC.currentTime + 0.06);
+}
+function sfxBigBang() {
+  if (!AC) return;
+  const t = AC.currentTime;
+  [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.9, 'triangle', 0.1, t + i * 0.09));
+  tone(65, 1.2, 'sine', 0.18, t, 0.05);
+}
+function sfxOver() {
+  if (!AC) return;
+  const t = AC.currentTime;
+  [392, 311, 262, 196].forEach((f, i) => tone(f, 0.8, 'sine', 0.1, t + i * 0.22, 0.03));
+}
+function updateBGM() {
+  if (!AC || state !== 'play') return;
+  if (bgmNext < AC.currentTime) bgmNext = AC.currentTime + 0.1; // タブ復帰時の追い上げ防止
+  const ahead = AC.currentTime + 0.2;
+  while (bgmNext < ahead) {
+    const root = 220;
+    const idx = [0, 4, 2, 5, 1, 4, 3, 6][bgmStep % 8];
+    const f = root * Math.pow(2, SCALE[idx] / 12);
+    tone(f, 1.6, 'sine', 0.035, bgmNext, 0.25);
+    if (bgmStep % 8 === 0) tone(root / 2, 3.2, 'sine', 0.05, bgmNext, 0.6);
+    if (bgmStep % 4 === 2) tone(f * 2, 1.2, 'sine', 0.018, bgmNext + 0.1, 0.3);
+    bgmNext += 0.62;
+    bgmStep++;
+  }
+}
+
+// ---------- ゲームロジック ----------
+function weightedSpawn() {
+  let total = 0;
+  for (const w of SPAWN_WEIGHTS) total += w;
+  let v = Math.random() * total;
+  for (let i = 0; i < SPAWN_WEIGHTS.length; i++) {
+    v -= SPAWN_WEIGHTS[i];
+    if (v <= 0) return i;
+  }
+  return 0;
+}
+
+function reset() {
+  bodies = []; particles = []; floaters = []; shockwaves = [];
+  score = 0; combo = 0; lastMergeAt = -99; maxTierReached = 0;
+  dangerTime = 0; dropCooldown = 0; shake = 0;
+  current = { tier: weightedSpawn() };
+  nextTier = weightedSpawn();
+  aimX = W / 2;
+  state = 'play';
+  bgmStep = 0;
+  if (AC) bgmNext = AC.currentTime + 0.2;
+}
+
+function clampAim(x, r) {
+  return Math.max(FIELD.x + r + 2, Math.min(FIELD.x + FIELD.w - r - 2, x));
+}
+
+function dropCurrent() {
+  if (!current || dropCooldown > 0) return;
+  const t = TIERS[current.tier];
+  const x = clampAim(aimX, t.r);
+  bodies.push({
+    id: bodyId++, tier: current.tier,
+    x, y: HOLD_Y, vx: 0, vy: 60,
+    r: t.r, settled: false, born: time,
+    blink: Math.random() * 4 + 2, flash: 0,
+  });
+  sfxDrop();
+  current = null;
+  dropCooldown = 0.45;
+}
+
+function spawnParticles(x, y, color, n, speed, size) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const v = speed * (0.3 + Math.random() * 0.7);
+    particles.push({
+      x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 40,
+      life: 0.5 + Math.random() * 0.6, maxLife: 1,
+      color, size: size * (0.5 + Math.random() * 0.8),
+    });
+  }
+}
+
+function addFloater(x, y, text, color, big) {
+  floaters.push({ x, y, text, color, life: 1.3, big: !!big });
+}
+
+function doMerge(a, b) {
+  const newTier = a.tier + 1;
+  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  bodies = bodies.filter(o => o !== a && o !== b);
+
+  // コンボ判定
+  if (time - lastMergeAt < 1.1) combo++; else combo = 1;
+  lastMergeAt = time;
+  const mult = 1 + (combo - 1) * 0.5;
+
+  if (newTier >= TIERS.length) {
+    // 大宇宙同士の融合 → ビッグバン！
+    const bonus = Math.round(500 * mult);
+    score += bonus;
+    spawnParticles(mx, my, '#b9a3ff', 60, 500, 6);
+    spawnParticles(mx, my, '#ffe9a8', 40, 380, 4);
+    shockwaves.push({ x: mx, y: my, r: 10, max: 420, life: 1 });
+    addFloater(mx, my - 40, 'ビッグバン！ +' + bonus, '#ffe9a8', true);
+    shake = 18;
+    sfxBigBang();
+    return;
+  }
+
+  const t = TIERS[newTier];
+  const gained = Math.round(t.s * mult);
+  score += gained;
+  if (newTier > maxTierReached) {
+    maxTierReached = newTier;
+    if (newTier >= 7) addFloater(mx, my - t.r - 30, '✦ ' + t.n + ' 誕生 ✦', t.glow, true);
+  }
+  bodies.push({
+    id: bodyId++, tier: newTier,
+    x: mx, y: my,
+    vx: (a.vx + b.vx) / 2, vy: (a.vy + b.vy) / 2 - 60,
+    r: t.r, settled: true, born: time,
+    blink: Math.random() * 4 + 2, flash: 0.35,
+  });
+  spawnParticles(mx, my, t.glow, 10 + newTier * 3, 160 + newTier * 30, 3 + newTier * 0.4);
+  shockwaves.push({ x: mx, y: my, r: t.r * 0.5, max: t.r * 2.2, life: 0.5 });
+  addFloater(mx, my - t.r - 10, '+' + gained, t.glow);
+  if (combo >= 2) addFloater(mx, my - t.r - 34, combo + ' コンボ！', '#ffd9ec');
+  shake = Math.min(shake + 1.5 + newTier * 0.8, 14);
+  sfxMerge(newTier);
+}
+
+function physics(dt) {
+  const sub = 4, h = dt / sub;
+  for (let s = 0; s < sub; s++) {
+    for (const b of bodies) {
+      b.vy += GRAVITY * h;
+      b.vx *= 1 - 0.4 * h;
+      b.x += b.vx * h;
+      b.y += b.vy * h;
+      // 壁と床
+      const minX = FIELD.x + b.r, maxX = FIELD.x + FIELD.w - b.r;
+      const maxY = FIELD.y + FIELD.h - b.r;
+      if (b.x < minX) { b.x = minX; b.vx *= -0.2; }
+      if (b.x > maxX) { b.x = maxX; b.vx *= -0.2; }
+      if (b.y > maxY) {
+        b.y = maxY;
+        if (b.vy > 0) b.vy *= -0.15;
+        b.vx *= 1 - 3 * h;
+        b.settled = true;
+      }
+    }
+    // 衝突解決と融合
+    let mergePair = null;
+    for (let i = 0; i < bodies.length; i++) {
+      for (let j = i + 1; j < bodies.length; j++) {
+        const a = bodies[i], b = bodies[j];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const rr = a.r + b.r;
+        const d2 = dx * dx + dy * dy;
+        if (d2 >= rr * rr) continue;
+        if (!mergePair && a.tier === b.tier) mergePair = [a, b];
+        const dist = Math.sqrt(d2) || 0.001;
+        const nx = dx / dist, ny = dy / dist;
+        const overlap = rr - dist;
+        const ma = a.r * a.r, mb = b.r * b.r, total = ma + mb;
+        a.x -= nx * overlap * (mb / total);
+        a.y -= ny * overlap * (mb / total);
+        b.x += nx * overlap * (ma / total);
+        b.y += ny * overlap * (ma / total);
+        const velN = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+        if (velN < 0) {
+          const e = 0.1;
+          const jimp = -(1 + e) * velN / (1 / ma + 1 / mb);
+          a.vx -= jimp * nx / ma; a.vy -= jimp * ny / ma;
+          b.vx += jimp * nx / mb; b.vy += jimp * ny / mb;
+        }
+        a.settled = true; b.settled = true;
+      }
+    }
+    if (mergePair) doMerge(mergePair[0], mergePair[1]);
+  }
+}
+
+function checkGameOver(dt) {
+  let inDanger = false;
+  for (const b of bodies) {
+    if (b.settled && time - b.born > 0.6 && b.y - b.r < LINE_Y && Math.abs(b.vy) < 60) {
+      inDanger = true;
+      break;
+    }
+  }
+  if (inDanger) dangerTime += dt; else dangerTime = Math.max(0, dangerTime - dt * 2);
+  if (dangerTime > 1.6) {
+    state = 'over';
+    overAt = time;
+    if (score > best) {
+      best = score;
+      localStorage.setItem('stellar-garden-best', String(best));
+    }
+    sfxOver();
+    shake = 10;
+  }
+}
+
+function update(dt) {
+  time += dt;
+  shake = Math.max(0, shake - dt * 30);
+
+  // 背景
+  for (const n of nebulae) {
+    n.x += n.dx * dt; n.y += n.dy * dt;
+    if (n.x < -n.r) n.x = W + n.r; if (n.x > W + n.r) n.x = -n.r;
+    if (n.y < -n.r) n.y = H + n.r; if (n.y > H + n.r) n.y = -n.r;
+  }
+  if (!shootingStar && Math.random() < dt * 0.12) {
+    shootingStar = { x: Math.random() * W, y: -10, vx: 150 + Math.random() * 150, vy: 260 + Math.random() * 120, life: 1.6 };
+  }
+  if (shootingStar) {
+    shootingStar.x += shootingStar.vx * dt;
+    shootingStar.y += shootingStar.vy * dt;
+    shootingStar.life -= dt;
+    if (shootingStar.life <= 0 || shootingStar.y > H + 20) shootingStar = null;
+  }
+
+  // パーティクル類
+  for (const p of particles) {
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vy += 300 * dt;
+    p.life -= dt;
+  }
+  particles = particles.filter(p => p.life > 0);
+  for (const f of floaters) { f.y -= 36 * dt; f.life -= dt; }
+  floaters = floaters.filter(f => f.life > 0);
+  for (const s of shockwaves) { s.r += (s.max - s.r) * 8 * dt; s.life -= dt * 2.2; }
+  shockwaves = shockwaves.filter(s => s.life > 0);
+
+  if (state !== 'play') return;
+
+  // 手札補充
+  if (dropCooldown > 0) {
+    dropCooldown -= dt;
+    if (dropCooldown <= 0 && !current) {
+      current = { tier: nextTier };
+      nextTier = weightedSpawn();
+    }
+  }
+  for (const b of bodies) {
+    b.blink -= dt;
+    if (b.blink < -0.13) b.blink = Math.random() * 4 + 2;
+    if (b.flash > 0) b.flash -= dt;
+  }
+  physics(dt);
+  checkGameOver(dt);
+  updateBGM();
+}
+
+// ---------- 描画 ----------
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function drawBackground() {
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0b0630');
+  grad.addColorStop(0.5, '#120a3e');
+  grad.addColorStop(1, '#1d0f42');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.globalCompositeOperation = 'lighter';
+  for (const n of nebulae) {
+    const a = 0.05 + 0.03 * Math.sin(time * 0.3 + n.p);
+    const g = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r);
+    g.addColorStop(0, n.c + 'cc');
+    g.addColorStop(1, n.c + '00');
+    ctx.globalAlpha = a * 3;
+    ctx.fillStyle = g;
+    ctx.fillRect(n.x - n.r, n.y - n.r, n.r * 2, n.r * 2);
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+
+  for (const st of stars) {
+    const tw = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(time * st.sp + st.p));
+    ctx.globalAlpha = tw;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  if (shootingStar) {
+    const ss = shootingStar;
+    const g = ctx.createLinearGradient(ss.x, ss.y, ss.x - ss.vx * 0.25, ss.y - ss.vy * 0.25);
+    g.addColorStop(0, 'rgba(255,255,255,0.9)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.strokeStyle = g;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ss.x, ss.y);
+    ctx.lineTo(ss.x - ss.vx * 0.25, ss.y - ss.vy * 0.25);
+    ctx.stroke();
+  }
+}
+
+function drawField() {
+  // 器（透明な結界のような壁）
+  ctx.save();
+  ctx.strokeStyle = 'rgba(160,150,255,0.5)';
+  ctx.lineWidth = 3;
+  ctx.shadowColor = '#8f7bff';
+  ctx.shadowBlur = 14;
+  ctx.beginPath();
+  ctx.moveTo(FIELD.x, FIELD.y);
+  ctx.lineTo(FIELD.x, FIELD.y + FIELD.h);
+  ctx.lineTo(FIELD.x + FIELD.w, FIELD.y + FIELD.h);
+  ctx.lineTo(FIELD.x + FIELD.w, FIELD.y);
+  ctx.stroke();
+  ctx.restore();
+
+  // 危険ライン
+  const danger = dangerTime > 0.05;
+  const pulse = 0.25 + (danger ? 0.55 * (0.5 + 0.5 * Math.sin(time * 12)) : 0.1 * Math.sin(time * 2));
+  ctx.save();
+  ctx.strokeStyle = danger ? `rgba(255,90,110,${pulse})` : `rgba(180,170,255,${pulse})`;
+  ctx.lineWidth = danger ? 3 : 1.5;
+  ctx.setLineDash([10, 8]);
+  ctx.beginPath();
+  ctx.moveTo(FIELD.x, LINE_Y);
+  ctx.lineTo(FIELD.x + FIELD.w, LINE_Y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawBody(b, ghostAlpha) {
+  const t = TIERS[b.tier];
+  const r = b.flash > 0 ? b.r * (1 + b.flash * 0.5) : b.r;
+  ctx.save();
+  if (ghostAlpha !== undefined) ctx.globalAlpha = ghostAlpha;
+
+  // 光輪
+  ctx.shadowColor = t.glow;
+  ctx.shadowBlur = r * 0.7 + (b.flash > 0 ? 30 : 0);
+
+  const g = ctx.createRadialGradient(b.x - r * 0.35, b.y - r * 0.4, r * 0.1, b.x, b.y, r);
+  g.addColorStop(0, t.c1);
+  g.addColorStop(0.65, t.c2);
+  g.addColorStop(1, shadeColor(t.c2, -35));
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // 縁のハイライト
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = Math.max(1, r * 0.05);
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, r * 0.92, -2.4, -0.7);
+  ctx.stroke();
+
+  // 大きい天体には環・きらめき
+  if (b.tier >= 4 && b.tier <= 6) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = r * 0.08;
+    ctx.beginPath();
+    ctx.ellipse(b.x, b.y, r * 1.25, r * 0.32, -0.35, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (b.tier >= 7) {
+    for (let i = 0; i < 3; i++) {
+      const a = time * 0.8 + i * 2.1 + b.id;
+      const sx = b.x + Math.cos(a) * r * 0.55;
+      const sy = b.y + Math.sin(a) * r * 0.55;
+      drawSparkle(sx, sy, r * 0.12, 'rgba(255,255,255,0.8)');
+    }
+  }
+
+  // 顔
+  const er = Math.max(1.6, r * 0.09);
+  const ey = b.y - r * 0.08;
+  const ex = r * 0.32;
+  const blinking = b.blink < 0 || b.flash > 0.1;
+  ctx.fillStyle = 'rgba(40,30,70,0.85)';
+  ctx.strokeStyle = 'rgba(40,30,70,0.85)';
+  ctx.lineWidth = Math.max(1.4, er * 0.7);
+  ctx.lineCap = 'round';
+  if (blinking) {
+    // にっこり閉じ目（^ ^）
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(b.x + side * ex, ey + er, er * 1.6, Math.PI * 1.15, Math.PI * 1.85);
+      ctx.stroke();
+    }
+  } else {
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(b.x + side * ex, ey, er, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.beginPath();
+      ctx.arc(b.x + side * ex - er * 0.3, ey - er * 0.3, er * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(40,30,70,0.85)';
+    }
+  }
+  // くち
+  ctx.beginPath();
+  ctx.arc(b.x, b.y + r * 0.18, r * 0.14, 0.3, Math.PI - 0.3);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawSparkle(x, y, s, color) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(1, s * 0.3);
+  ctx.beginPath();
+  ctx.moveTo(x - s, y); ctx.lineTo(x + s, y);
+  ctx.moveTo(x, y - s); ctx.lineTo(x, y + s);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function shadeColor(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  let r = (n >> 16) + amt, g = ((n >> 8) & 0xff) + amt, b = (n & 0xff) + amt;
+  r = Math.max(0, Math.min(255, r));
+  g = Math.max(0, Math.min(255, g));
+  b = Math.max(0, Math.min(255, b));
+  return `rgb(${r},${g},${b})`;
+}
+
+function drawHUD() {
+  ctx.save();
+  ctx.textBaseline = 'middle';
+
+  // スコア
+  ctx.fillStyle = '#cfc8ff';
+  ctx.font = '13px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('スコア', 36, 34);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 34px sans-serif';
+  ctx.fillText(String(score), 36, 64);
+  ctx.fillStyle = '#9b92d8';
+  ctx.font = '13px sans-serif';
+  ctx.fillText('ベスト ' + Math.max(best, score), 36, 92);
+
+  // コンボ表示
+  if (state === 'play' && combo >= 2 && time - lastMergeAt < 1.1) {
+    ctx.fillStyle = '#ffd9ec';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(combo + ' COMBO', W / 2, 50);
+  }
+
+  // NEXT
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#cfc8ff';
+  ctx.font = '12px sans-serif';
+  ctx.fillText('NEXT', 440, 26);
+  const nt = TIERS[nextTier];
+  const pr = Math.min(20, nt.r * 0.8);
+  ctx.save();
+  ctx.shadowColor = nt.glow;
+  ctx.shadowBlur = 10;
+  const g = ctx.createRadialGradient(440 - pr * 0.3, 58 - pr * 0.3, pr * 0.1, 440, 58, pr);
+  g.addColorStop(0, nt.c1);
+  g.addColorStop(1, nt.c2);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(440, 58, pr, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = '#9b92d8';
+  ctx.font = '11px sans-serif';
+  ctx.fillText(nt.n, 440, 92);
+
+  // ミュートボタン
+  drawMuteButton();
+
+  // 進化チャート（下部）
+  const chartY = 776;
+  let cx = 52;
+  ctx.font = '10px sans-serif';
+  for (let i = 0; i < TIERS.length; i++) {
+    const t = TIERS[i];
+    const rr = 5 + i * 1.1;
+    const lit = i <= maxTierReached;
+    ctx.globalAlpha = lit ? 1 : 0.28;
+    const gg = ctx.createRadialGradient(cx - rr * 0.3, chartY - rr * 0.3, rr * 0.1, cx, chartY, rr);
+    gg.addColorStop(0, t.c1);
+    gg.addColorStop(1, t.c2);
+    ctx.fillStyle = gg;
+    ctx.beginPath();
+    ctx.arc(cx, chartY, rr, 0, Math.PI * 2);
+    ctx.fill();
+    if (i < TIERS.length - 1) {
+      ctx.globalAlpha = 0.4;
+      ctx.fillStyle = '#cfc8ff';
+      ctx.fillText('›', cx + rr + 9, chartY + 1);
+    }
+    cx += rr * 2 + 18;
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+const MUTE_BTN = { x: 354, y: 44, r: 16 };
+function drawMuteButton() {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(160,150,255,0.6)';
+  ctx.fillStyle = 'rgba(60,50,120,0.4)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(MUTE_BTN.x, MUTE_BTN.y, MUTE_BTN.r, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#cfc8ff';
+  ctx.font = '14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(muted ? '🔇' : '🔊', MUTE_BTN.x, MUTE_BTN.y + 1);
+  ctx.restore();
+}
+
+function drawAim() {
+  if (!current || state !== 'play') return;
+  const t = TIERS[current.tier];
+  const x = clampAim(aimX, t.r);
+  // ガイド線
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 8]);
+  ctx.beginPath();
+  ctx.moveTo(x, HOLD_Y + t.r);
+  ctx.lineTo(x, FIELD.y + FIELD.h);
+  ctx.stroke();
+  ctx.restore();
+  drawBody({ x, y: HOLD_Y, r: t.r, tier: current.tier, blink: 1, flash: 0, id: -1 });
+}
+
+function drawEffects() {
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, p.life / p.maxLife) * 0.9;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * (p.life / p.maxLife), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  for (const s of shockwaves) {
+    ctx.globalAlpha = Math.max(0, s.life) * 0.6;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  for (const f of floaters) {
+    ctx.globalAlpha = Math.min(1, f.life);
+    ctx.fillStyle = f.color;
+    ctx.font = (f.big ? 'bold 24px' : 'bold 17px') + ' sans-serif';
+    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur = 4;
+    ctx.fillText(f.text, f.x, f.y);
+  }
+  ctx.restore();
+}
+
+function drawTitle() {
+  ctx.save();
+  ctx.textAlign = 'center';
+
+  // 浮遊するデモ天体
+  for (let i = 0; i < 5; i++) {
+    const t = i * 2 + 1;
+    const x = W / 2 + Math.sin(time * 0.4 + i * 1.7) * (140 - i * 8);
+    const y = 480 + Math.cos(time * 0.5 + i * 2.3) * 60 + i * 28;
+    drawBody({ x, y, r: TIERS[t % TIERS.length].r * 0.7, tier: t % TIERS.length, blink: 1, flash: 0, id: i }, 0.85);
+  }
+
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = '#8f7bff';
+  ctx.shadowBlur = 24;
+  ctx.font = 'bold 58px "Hiragino Mincho ProN", "Yu Mincho", serif';
+  ctx.fillText('星 海 の 庭', W / 2, 220);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#b9aef0';
+  ctx.font = '18px serif';
+  ctx.fillText('〜 Stellar Garden 〜', W / 2, 262);
+
+  ctx.fillStyle = '#d8d2ff';
+  ctx.font = '15px sans-serif';
+  ctx.fillText('星屑を落とし、同じ天体を重ねて融合させよう。', W / 2, 330);
+  ctx.fillText('星屑はやがて月になり、銀河になり、大宇宙へ。', W / 2, 356);
+
+  const blink = 0.5 + 0.5 * Math.sin(time * 3);
+  ctx.globalAlpha = 0.4 + 0.6 * blink;
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 20px sans-serif';
+  ctx.fillText('タップ / クリック で はじめる', W / 2, 700);
+  ctx.globalAlpha = 1;
+
+  if (best > 0) {
+    ctx.fillStyle = '#9b92d8';
+    ctx.font = '14px sans-serif';
+    ctx.fillText('ベストスコア ' + best, W / 2, 740);
+  }
+  ctx.restore();
+}
+
+function drawOver() {
+  const fade = Math.min(1, (time - overAt) / 0.8);
+  ctx.save();
+  ctx.fillStyle = `rgba(6,4,26,${0.72 * fade})`;
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = fade;
+  ctx.textAlign = 'center';
+
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = '#ff5c8a';
+  ctx.shadowBlur = 18;
+  ctx.font = 'bold 44px "Hiragino Mincho ProN", "Yu Mincho", serif';
+  ctx.fillText('星々は還っていった…', W / 2, 280);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#d8d2ff';
+  ctx.font = '17px sans-serif';
+  ctx.fillText('スコア', W / 2, 360);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 52px sans-serif';
+  ctx.fillText(String(score), W / 2, 410);
+
+  if (score >= best && score > 0) {
+    ctx.fillStyle = '#ffe9a8';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.fillText('✦ ベスト記録更新！ ✦', W / 2, 455);
+  } else {
+    ctx.fillStyle = '#9b92d8';
+    ctx.font = '15px sans-serif';
+    ctx.fillText('ベスト ' + best, W / 2, 455);
+  }
+
+  const mt = TIERS[maxTierReached];
+  ctx.fillStyle = '#b9aef0';
+  ctx.font = '15px sans-serif';
+  ctx.fillText('たどり着いた天体：' + mt.n, W / 2, 500);
+
+  if (time - overAt > 1) {
+    const blink = 0.5 + 0.5 * Math.sin(time * 3);
+    ctx.globalAlpha = fade * (0.4 + 0.6 * blink);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 19px sans-serif';
+    ctx.fillText('タップ / クリック で もういちど', W / 2, 620);
+  }
+  ctx.restore();
+}
+
+function render() {
+  ctx.save();
+  if (shake > 0) {
+    ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+  }
+  drawBackground();
+  if (state === 'title') {
+    drawTitle();
+  } else {
+    drawField();
+    for (const b of bodies) drawBody(b);
+    drawAim();
+    drawEffects();
+    drawHUD();
+    if (state === 'over') drawOver();
+  }
+  ctx.restore();
+}
+
+// ---------- 入力 ----------
+function canvasPos(e) {
+  const rect = cvs.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) / rect.width * W,
+    y: (e.clientY - rect.top) / rect.height * H,
+  };
+}
+
+cvs.addEventListener('pointerdown', e => {
+  ensureAudio();
+  const p = canvasPos(e);
+  uiClicked = false;
+  if (state === 'play') {
+    const dx = p.x - MUTE_BTN.x, dy = p.y - MUTE_BTN.y;
+    if (dx * dx + dy * dy < (MUTE_BTN.r + 6) ** 2) {
+      setMuted(!muted);
+      uiClicked = true;
+      return;
+    }
+    aimX = p.x;
+  }
+});
+
+cvs.addEventListener('pointermove', e => {
+  if (state !== 'play' || uiClicked) return;
+  aimX = canvasPos(e).x;
+});
+
+cvs.addEventListener('pointerup', e => {
+  ensureAudio();
+  if (uiClicked) { uiClicked = false; return; }
+  if (state === 'title') { reset(); return; }
+  if (state === 'over') {
+    if (time - overAt > 0.8) reset();
+    return;
+  }
+  aimX = canvasPos(e).x;
+  dropCurrent();
+});
+
+window.addEventListener('keydown', e => {
+  if (e.repeat && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  if (e.key === 'm' || e.key === 'M') { setMuted(!muted); return; }
+  if (state === 'title' && (e.key === ' ' || e.key === 'Enter')) { ensureAudio(); reset(); return; }
+  if (state === 'over' && (e.key === ' ' || e.key === 'Enter') && time - overAt > 0.8) { reset(); return; }
+  if (state !== 'play') return;
+  if (e.key === 'ArrowLeft') aimX -= 14;
+  if (e.key === 'ArrowRight') aimX += 14;
+  if (e.key === ' ' || e.key === 'ArrowDown') { e.preventDefault(); dropCurrent(); }
+});
+
+// ---------- 画面サイズ ----------
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cvs.width = W * dpr;
+  cvs.height = H * dpr;
+  const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  cvs.style.width = W * scale + 'px';
+  cvs.style.height = H * scale + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ---------- メインループ ----------
+let lastT = performance.now();
+function loop(now) {
+  let dt = (now - lastT) / 1000;
+  lastT = now;
+  if (dt > 0.05) dt = 0.05; // タブ復帰時の暴走防止
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
