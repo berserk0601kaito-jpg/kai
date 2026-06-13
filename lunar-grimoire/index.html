@@ -1,0 +1,1545 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>月詠の魔導書 〜 Lunar Grimoire 〜</title>
+<style>
+  html, body { margin:0; padding:0; background:#05030f; height:100%; overflow:hidden;
+    touch-action:none; -webkit-user-select:none; user-select:none; }
+  canvas { display:block; }
+</style>
+</head>
+<body>
+<canvas id="g"></canvas>
+<script>
+'use strict';
+// ============================================================
+// 月詠の魔導書 〜 Lunar Grimoire 〜
+// 5つの元素を紡いで15のスペルを「発見」する、月夜の森のサバイバル。
+// ・オートアタック式サバイバー系 + スペル合成図鑑
+// ・死んでも「月の欠片」で恒久強化（メタ進行）
+// ・依存ライブラリなし・単一ファイル
+// ============================================================
+
+const TAU = Math.PI * 2;
+const cvs = document.getElementById('g');
+const ctx = cvs.getContext('2d');
+let VW = 0, VH = 0;
+function resize() {
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  VW = innerWidth; VH = innerHeight;
+  cvs.width = VW * dpr; cvs.height = VH * dpr;
+  cvs.style.width = VW + 'px'; cvs.style.height = VH + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', resize);
+resize();
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const rnd = (a, b) => a + Math.random() * (b - a);
+const dist2 = (ax, ay, bx, by) => (ax - bx) ** 2 + (ay - by) ** 2;
+function hash2(x, y) { const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return n - Math.floor(n); }
+
+// ---------- データ ----------
+const ELEMS = {
+  flame:   { n: '炎', c: '#ff8a5c', g: '#ff5c2e' },
+  ice:     { n: '氷', c: '#8ed8ff', g: '#4fb6ff' },
+  moon:    { n: '月', c: '#cfc4ff', g: '#9d8bff' },
+  thunder: { n: '雷', c: '#ffe05c', g: '#ffc41f' },
+  wind:    { n: '風', c: '#8effc0', g: '#3fe896' },
+};
+const ELEM_IDS = Object.keys(ELEMS);
+const pairKey = (a, b) => [a, b].sort().join('+');
+
+// 15のスペル（元素2つの組み合わせで「発見」する）
+const SPELLS = {
+  'moon+moon':       { n: 'ルナブラスト', d: '敵を追尾する大きな月光弾', a: 'bolt',   cd: 1.6, dmg: 22, p: { count: 1, speed: 260, r: 13, pierce: 3, homing: 3 } },
+  'flame+moon':      { n: '灯火の精',     d: '周囲を巡り敵を焦がす焔の精霊', a: 'orbit', cd: 0,   dmg: 11, p: { count: 2, rad: 82, rot: 2.2, or: 11 }, st: 'burn' },
+  'moon+thunder':    { n: '月雷',         d: '敵から敵へ跳ねる紫の稲妻', a: 'chain',  cd: 2.2, dmg: 19, p: { jumps: 3, range: 300, jr: 200 } },
+  'moon+wind':       { n: '月風の刃',     d: '手元へ戻る三日月の刃', a: 'boom',   cd: 2.0, dmg: 15, p: { count: 1, speed: 330, r: 12 } },
+  'ice+moon':        { n: '凍月の環',     d: '周囲の敵を遅らせる冷気の輪', a: 'aura',  cd: 0.7, dmg: 6,  p: { rad: 115 }, st: 'slow' },
+  'flame+flame':     { n: '業火球',       d: '着弾して爆発する火球', a: 'bolt',   cd: 2.0, dmg: 17, p: { count: 1, speed: 300, r: 10, pierce: 0, boom: 75 }, st: 'burn' },
+  'flame+thunder':   { n: '雷火',         d: '貫通する高速の火矢の斉射', a: 'bolt',  cd: 1.1, dmg: 9,  p: { count: 3, speed: 480, r: 6, pierce: 2, spread: 0.35 }, st: 'burn' },
+  'flame+wind':      { n: '火炎旋風',     d: '燃え広がる炎の衝撃波', a: 'nova',   cd: 2.6, dmg: 15, p: { maxr: 175, vr: 270 }, st: 'burn' },
+  'flame+ice':       { n: '蒸気爆発',     d: '敵の足元で弾ける高熱の蒸気', a: 'strike', cd: 2.4, dmg: 21, p: { count: 2, r: 64 } },
+  'thunder+thunder': { n: '落雷',         d: '天から降り注ぐ裁きの雷', a: 'strike', cd: 1.8, dmg: 25, p: { count: 3, r: 50 } },
+  'thunder+wind':    { n: '雷雲',         d: '敵を求めて彷徨う嵐の雲', a: 'zone',   cd: 6.0, dmg: 10, p: { r: 95, life: 5, tick: 0.4 } },
+  'ice+thunder':     { n: '霹靂氷晶',     d: '氷晶を撒き散らす衝撃波', a: 'nova',  cd: 3.0, dmg: 19, p: { maxr: 155, vr: 300 }, st: 'slow' },
+  'wind+wind':       { n: 'かまいたち',   d: '四方を薙いで戻る風の刃', a: 'boom',  cd: 2.4, dmg: 10, p: { count: 3, speed: 390, r: 10 } },
+  'ice+wind':        { n: '吹雪',         d: '進む先を凍てつかせる氷の礫', a: 'bolt', cd: 1.4, dmg: 7, p: { count: 5, speed: 330, r: 6, pierce: 1, spread: 0.7, aim: 'move' }, st: 'slow' },
+  'ice+ice':         { n: '絶対零度',     d: '触れた敵を凍りつかせる波動', a: 'nova', cd: 4.2, dmg: 17, p: { maxr: 145, vr: 240 }, st: 'freeze' },
+};
+function spellColors(key) {
+  const [a, b] = key.split('+');
+  return [ELEMS[a].c, ELEMS[b].c, ELEMS[a].g];
+}
+
+const ETYPES = {
+  wisp:  { r: 10, hp: 10, spd: 52,  dmg: 9,  c: '#9fe8ff', xp: 1 },
+  moth:  { r: 9,  hp: 7,  spd: 105, dmg: 7,  c: '#e3c0ff', xp: 1 },
+  shade: { r: 12, hp: 18, spd: 82,  dmg: 12, c: '#6a6aa8', xp: 2 },
+  oni:   { r: 15, hp: 34, spd: 66,  dmg: 16, c: '#ff9a7a', xp: 3 },
+  golem: { r: 22, hp: 80, spd: 30,  dmg: 22, c: '#9ab07a', xp: 6 },
+};
+const BOSSES = [
+  { t: 150, n: '森喰らいの影',   hp: 900,  r: 34, spd: 62, dmg: 26, c: '#8a5aff' },
+  { t: 300, n: '焔角の鬼神',     hp: 2000, r: 38, spd: 68, dmg: 32, c: '#ff6a4a' },
+  { t: 450, n: '凍てつく女王',   hp: 3600, r: 42, spd: 64, dmg: 38, c: '#6ad0ff' },
+  { t: 570, n: '蝕月オロチ',     hp: 6500, r: 54, spd: 72, dmg: 46, c: '#ffd24a', final: true },
+];
+const WIN_TIME = 600; // 10分
+
+const STATCARDS = [
+  { id: 'might', n: '魔力の雫',   d: 'スペルの威力 +12%' },
+  { id: 'haste', n: '時詠みの砂', d: '詠唱の間隔 -8%' },
+  { id: 'vit',   n: '生命の果実', d: '最大HP +25 ＆ 半分回復' },
+  { id: 'swift', n: '韋駄天の靴', d: '移動速度 +10%' },
+  { id: 'lure',  n: '星の磁石',   d: '経験値の吸引範囲 +40%' },
+  { id: 'mend',  n: '月の祝福',   d: '毎秒 HP 0.6 回復' },
+];
+const SHOP = [
+  { id: 'hp',   n: '月の加護',   d: '最大HP +20' },
+  { id: 'atk',  n: '魔力錬成',   d: 'スペル威力 +8%' },
+  { id: 'spd',  n: '夜風の歩み', d: '移動速度 +5%' },
+  { id: 'mag',  n: '星の引力',   d: '吸引範囲 +25%' },
+  { id: 'luck', n: '幸運の星屑', d: '月の欠片の獲得 +15%' },
+];
+const shopCost = lv => 15 * (lv + 1) * (lv + 1);
+
+// ---------- メタ進行（恒久データ） ----------
+let meta = { shards: 0, hp: 0, atk: 0, spd: 0, mag: 0, luck: 0 };
+try { Object.assign(meta, JSON.parse(localStorage.getItem('lunar-grimoire-meta') || '{}')); } catch (e) {}
+let discovered = new Set();
+try { discovered = new Set(JSON.parse(localStorage.getItem('lunar-grimoire-spells') || '[]')); } catch (e) {}
+let bestTime = +(localStorage.getItem('lunar-grimoire-best') || 0);
+let hasWon = localStorage.getItem('lunar-grimoire-won') === '1';
+function saveMeta() {
+  localStorage.setItem('lunar-grimoire-meta', JSON.stringify(meta));
+  localStorage.setItem('lunar-grimoire-spells', JSON.stringify([...discovered]));
+  localStorage.setItem('lunar-grimoire-best', String(bestTime));
+  if (hasWon) localStorage.setItem('lunar-grimoire-won', '1');
+}
+
+// ---------- サウンド ----------
+let AC = null, master = null, muted = localStorage.getItem('lunar-grimoire-mute') === '1';
+let bgmNext = 0, bgmStep = 0, lastHitS = 0, lastPickS = 0, lastHurtS = 0;
+function ensureAudio() {
+  if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
+  try {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    master = AC.createGain();
+    master.gain.value = muted ? 0 : 1;
+    master.connect(AC.destination);
+    bgmNext = AC.currentTime + 0.3;
+  } catch (e) { AC = null; }
+}
+function setMuted(m) { muted = m; localStorage.setItem('lunar-grimoire-mute', m ? '1' : '0'); if (master) master.gain.value = m ? 0 : 1; }
+function tone(freq, dur, type, gain, when, attack) {
+  if (!AC) return;
+  const t = when || AC.currentTime;
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = type || 'sine'; o.frequency.value = freq;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(gain, t + (attack || 0.01));
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(master);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+function sHit() { if (time - lastHitS < 0.06) return; lastHitS = time; tone(rnd(180, 240), 0.05, 'square', 0.025); }
+function sPick() { if (time - lastPickS < 0.05) return; lastPickS = time; tone(rnd(740, 940), 0.07, 'sine', 0.04); }
+function sHurt() { if (time - lastHurtS < 0.3) return; lastHurtS = time; tone(110, 0.18, 'square', 0.1); tone(70, 0.25, 'sine', 0.12); }
+function sLevel() { if (!AC) return; const t = AC.currentTime; [523, 659, 784].forEach((f, i) => tone(f, 0.3, 'triangle', 0.09, t + i * 0.07)); }
+function sDiscover() { if (!AC) return; const t = AC.currentTime; [392, 523, 659, 784, 1047].forEach((f, i) => tone(f, 0.5, 'triangle', 0.1, t + i * 0.09)); }
+function sBoss() { if (!AC) return; const t = AC.currentTime; tone(82, 1.2, 'sawtooth', 0.1, t, 0.08); tone(55, 1.6, 'sine', 0.14, t, 0.1); }
+function sWin() { if (!AC) return; const t = AC.currentTime; [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => tone(f, 0.8, 'triangle', 0.1, t + i * 0.12)); }
+function sLose() { if (!AC) return; const t = AC.currentTime; [330, 262, 220, 165].forEach((f, i) => tone(f, 0.7, 'sine', 0.1, t + i * 0.2, 0.04)); }
+const MINOR = [0, 2, 3, 5, 7, 8, 10, 12];
+function updateBGM() {
+  if (!AC || state !== 'play') return;
+  if (bgmNext < AC.currentTime) bgmNext = AC.currentTime + 0.1;
+  const ahead = AC.currentTime + 0.25;
+  const tense = boss ? 1 : 0;
+  while (bgmNext < ahead) {
+    const root = 110;
+    const seq = [0, 7, 3, 5, 0, 7, 2, 5];
+    const f = root * 2 * Math.pow(2, MINOR[seq[bgmStep % 8] % 8] / 12);
+    tone(f, 1.2, 'sine', 0.03, bgmNext, 0.15);
+    if (bgmStep % 4 === 0) tone(root * (tense ? 1.19 : 1), 2.2, 'sine', 0.05, bgmNext, 0.4);
+    if (tense && bgmStep % 2 === 1) tone(f * 1.5, 0.5, 'triangle', 0.022, bgmNext);
+    bgmNext += tense ? 0.4 : 0.55;
+    bgmStep++;
+  }
+}
+
+// ---------- ラン状態 ----------
+let state = 'title'; // title | shop | grimoire | play | levelup | pause | over | win
+let time = 0, runT = 0;
+let player, enemies, gems, chests, shots, novas, strikes, zones, beams, parts, floats;
+let spells, pending, lvl, xp, xpNeed, kills, shardsRun, levelsPending, cards;
+let boss = null, bossIdx = 0, eliteAt = 0, spawnT = 0, shake = 0, runResult = '';
+let newDiscoveries = [];
+let joy = null; // {ox,oy,dx,dy}
+const keys = {};
+let uiButtons = [];
+
+function newRun() {
+  time = 0; runT = 0;
+  player = {
+    x: 0, y: 0, dirx: 0, diry: -1, facing: 1, moving: false,
+    maxhp: 100 + meta.hp * 20, hp: 100 + meta.hp * 20,
+    spd: 165 * (1 + meta.spd * 0.05),
+    might: 1 + meta.atk * 0.08,
+    haste: 1, magnet: 90 * (1 + meta.mag * 0.25),
+    regen: 0, hurtT: 0,
+  };
+  enemies = []; gems = []; chests = []; shots = []; novas = [];
+  strikes = []; zones = []; beams = []; parts = []; floats = [];
+  spells = [{ key: 'moon+moon', lvl: 1, timer: 0.5, tick: 0 }];
+  discover('moon+moon', true);
+  pending = null; lvl = 1; xp = 0; xpNeed = 6;
+  kills = 0; shardsRun = 0; levelsPending = 0; cards = null;
+  boss = null; bossIdx = 0; eliteAt = 50; spawnT = 0; shake = 0;
+  newDiscoveries = [];
+  state = 'play';
+  bgmStep = 0;
+  if (AC) bgmNext = AC.currentTime + 0.2;
+}
+
+function discover(key, silent) {
+  if (discovered.has(key)) return false;
+  discovered.add(key);
+  saveMeta();
+  if (!silent) {
+    newDiscoveries.push(key);
+    addFloat(player.x, player.y - 50, '✦ 新スペル発見『' + SPELLS[key].n + '』 ✦', '#ffe9a8', 2.4, true);
+    sDiscover();
+  }
+  return true;
+}
+
+function addFloat(x, y, text, color, life, big) {
+  if (floats.length > 70) floats.shift();
+  floats.push({ x, y, text, color, life: life || 0.8, max: life || 0.8, big: !!big });
+}
+function burst(x, y, color, n, sp, sz) {
+  for (let i = 0; i < n; i++) {
+    if (parts.length > 450) break;
+    const a = Math.random() * TAU, v = sp * rnd(0.3, 1);
+    parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: rnd(0.3, 0.7), c: color, s: sz * rnd(0.6, 1.3) });
+  }
+}
+
+// ---------- スペル発動 ----------
+function spellStats(sp) {
+  const def = SPELLS[sp.key];
+  const l = sp.lvl;
+  return {
+    dmg: def.dmg * (1 + 0.4 * (l - 1)) * player.might,
+    cd: (def.cd || 0) * Math.pow(0.92, l - 1) * player.haste,
+    count: (def.p.count || 1) + Math.floor((l - 1) / 2),
+    scale: 1 + 0.12 * (l - 1),
+  };
+}
+function nearestEnemy(x, y, maxd) {
+  let best = null, bd = (maxd || 1e9) ** 2;
+  for (const e of enemies) {
+    const d = dist2(x, y, e.x, e.y);
+    if (d < bd) { bd = d; best = e; }
+  }
+  return best;
+}
+function fireSpell(sp, st) {
+  const def = SPELLS[sp.key];
+  const [c1, c2] = spellColors(sp.key);
+  const p = def.p;
+  if (def.a === 'bolt') {
+    let baseA;
+    if (p.aim === 'move') baseA = Math.atan2(player.diry, player.dirx);
+    else {
+      const e = nearestEnemy(player.x, player.y, 520);
+      if (!e) return;
+      baseA = Math.atan2(e.y - player.y, e.x - player.x);
+    }
+    for (let i = 0; i < st.count; i++) {
+      const a = baseA + (p.spread ? (i - (st.count - 1) / 2) * (p.spread / st.count) : 0) + rnd(-0.04, 0.04);
+      shots.push({
+        x: player.x, y: player.y, vx: Math.cos(a) * p.speed, vy: Math.sin(a) * p.speed,
+        r: p.r * st.scale, dmg: st.dmg, pierce: p.pierce || 0, life: 2.2,
+        c1, c2, st: def.st, key: sp.key, homing: p.homing || 0, boomR: p.boom ? p.boom * st.scale : 0,
+      });
+    }
+  } else if (def.a === 'boom') {
+    for (let i = 0; i < st.count; i++) {
+      const a = Math.random() * TAU + i * TAU / st.count;
+      shots.push({
+        x: player.x, y: player.y, vx: Math.cos(a) * p.speed, vy: Math.sin(a) * p.speed,
+        r: p.r * st.scale, dmg: st.dmg, pierce: 999, life: 3,
+        c1, c2, st: def.st, key: sp.key, boomerang: 1, phase: 0, spin: rnd(0, TAU),
+      });
+    }
+  } else if (def.a === 'nova') {
+    novas.push({ x: player.x, y: player.y, r: 14, maxr: p.maxr * st.scale, vr: p.vr, dmg: st.dmg, st: def.st, key: sp.key, c1, c2, hit: new Set() });
+  } else if (def.a === 'strike') {
+    let n = st.count;
+    for (let i = 0; i < n; i++) {
+      const e = enemies.length ? enemies[(Math.random() * enemies.length) | 0] : null;
+      const x = e ? e.x + rnd(-20, 20) : player.x + rnd(-200, 200);
+      const y = e ? e.y + rnd(-20, 20) : player.y + rnd(-200, 200);
+      strikes.push({ x, y, delay: 0.45 + i * 0.12, flash: 0.22, r: p.r * st.scale, dmg: st.dmg, st: def.st, key: sp.key, c1, c2, done: false });
+    }
+  } else if (def.a === 'zone') {
+    const e = nearestEnemy(player.x, player.y, 500);
+    zones.push({
+      x: e ? e.x : player.x + rnd(-150, 150), y: e ? e.y : player.y + rnd(-150, 150),
+      r: p.r * st.scale, life: p.life + sp.lvl * 0.5, tick: p.tick, tt: 0, dmg: st.dmg, st: def.st, key: sp.key, c1, c2,
+      vx: rnd(-30, 30), vy: rnd(-30, 30),
+    });
+  } else if (def.a === 'chain') {
+    let from = { x: player.x, y: player.y };
+    let target = nearestEnemy(player.x, player.y, p.range);
+    const hitSet = new Set();
+    let jumps = p.jumps + Math.floor((sp.lvl - 1) / 2);
+    while (target && jumps-- > 0) {
+      beams.push({ x1: from.x, y1: from.y, x2: target.x, y2: target.y, life: 0.25, c: c2 });
+      hitEnemy(target, st.dmg, def.st, sp.key);
+      hitSet.add(target);
+      from = target;
+      let next = null, bd = p.jr ** 2;
+      for (const e of enemies) {
+        if (hitSet.has(e)) continue;
+        const d = dist2(from.x, from.y, e.x, e.y);
+        if (d < bd) { bd = d; next = e; }
+      }
+      target = next;
+    }
+  }
+}
+// orbit / aura は常時系（updateSpellsで処理）
+function updateSpells(dt) {
+  for (const sp of spells) {
+    const def = SPELLS[sp.key];
+    const st = spellStats(sp);
+    if (def.a === 'orbit') {
+      sp.tick = (sp.tick || 0) + dt;
+      const n = (def.p.count || 2) + (sp.lvl - 1);
+      const rad = def.p.rad * st.scale;
+      for (let i = 0; i < n; i++) {
+        const a = time * def.p.rot + i * TAU / n;
+        const ox = player.x + Math.cos(a) * rad, oy = player.y + Math.sin(a) * rad;
+        for (const e of enemies) {
+          if (dist2(ox, oy, e.x, e.y) < (def.p.or + e.r) ** 2) {
+            if (!e.hcd[sp.key] || time - e.hcd[sp.key] > 0.5) {
+              e.hcd[sp.key] = time;
+              hitEnemy(e, st.dmg, def.st, sp.key);
+            }
+          }
+        }
+      }
+      continue;
+    }
+    if (def.a === 'aura') {
+      sp.timer -= dt;
+      if (sp.timer <= 0) {
+        sp.timer = st.cd;
+        const rad = def.p.rad * st.scale;
+        for (const e of enemies) {
+          if (dist2(player.x, player.y, e.x, e.y) < (rad + e.r) ** 2) hitEnemy(e, st.dmg, def.st, sp.key);
+        }
+      }
+      continue;
+    }
+    sp.timer -= dt;
+    if (sp.timer <= 0) { sp.timer = Math.max(0.25, st.cd); fireSpell(sp, st); }
+  }
+}
+
+function applyStatus(e, st) {
+  if (st === 'burn') { e.brn = Math.max(e.brn, 2.5); }
+  else if (st === 'slow') { e.slw = Math.max(e.slw, 2); }
+  else if (st === 'freeze') { e.frz = Math.max(e.frz, 1.3); }
+}
+function hitEnemy(e, dmg, st, key) {
+  e.hp -= dmg;
+  e.flash = 0.08;
+  if (st) applyStatus(e, st);
+  addFloat(e.x + rnd(-8, 8), e.y - e.r - 4, String(Math.round(dmg)), '#fff', 0.5);
+  sHit();
+  if (e.hp <= 0) killEnemy(e);
+}
+function killEnemy(e) {
+  if (e.dead) return;
+  e.dead = true;
+  kills++;
+  burst(e.x, e.y, e.c, e.boss ? 50 : 8, e.boss ? 320 : 150, e.boss ? 5 : 3);
+  const luck = 1 + meta.luck * 0.15;
+  if (e.boss) {
+    shardsRun += Math.round(25 * luck);
+    chests.push({ x: e.x, y: e.y });
+    addFloat(e.x, e.y - 40, '✦ ' + e.bname + ' 撃破！ ✦', '#ffe9a8', 2, true);
+    shake = 16;
+    boss = null;
+    if (e.final) { winRun(); return; }
+  } else if (e.elite) {
+    shardsRun += Math.round(8 * luck);
+    chests.push({ x: e.x, y: e.y });
+    addFloat(e.x, e.y - 24, '宝箱を落とした！', '#ffd9a8', 1.2);
+  } else {
+    if (Math.random() < 0.04 * luck) shardsRun++;
+  }
+  const v = e.xp;
+  gems.push({ x: e.x + rnd(-6, 6), y: e.y + rnd(-6, 6), v, r: v >= 6 ? 7 : v >= 2 ? 5.5 : 4 });
+}
+
+// ---------- 敵スポーン ----------
+function spawnEnemy(typeId, elite) {
+  if (enemies.length > 230) return;
+  const t = ETYPES[typeId];
+  const a = Math.random() * TAU;
+  const d = Math.max(VW, VH) * 0.62 + 60;
+  const hpScale = 1 + runT / 75 + (runT > 450 ? (runT - 450) / 90 : 0);
+  const m = elite ? 1.9 : 1;
+  enemies.push({
+    type: typeId, x: player.x + Math.cos(a) * d, y: player.y + Math.sin(a) * d,
+    r: t.r * m, hp: t.hp * hpScale * (elite ? 14 : 1), maxhp: t.hp * hpScale * (elite ? 14 : 1),
+    spd: t.spd * (elite ? 0.9 : 1) * rnd(0.9, 1.1), dmg: t.dmg * m,
+    c: t.c, xp: t.xp * (elite ? 4 : 1), elite, flash: 0, brn: 0, brnT: 0, slw: 0, frz: 0, hcd: {}, wob: rnd(0, TAU),
+  });
+}
+function spawnBoss(def) {
+  const a = Math.random() * TAU;
+  const d = Math.max(VW, VH) * 0.55;
+  const b = {
+    type: 'boss', boss: true, bname: def.n, final: !!def.final,
+    x: player.x + Math.cos(a) * d, y: player.y + Math.sin(a) * d,
+    r: def.r, hp: def.hp * (1 + meta.atk * 0.04), maxhp: def.hp * (1 + meta.atk * 0.04),
+    spd: def.spd, dmg: def.dmg, c: def.c, xp: 30,
+    flash: 0, brn: 0, brnT: 0, slw: 0, frz: 0, hcd: {}, wob: 0, dashT: 5, dashing: 0, minionT: 8,
+  };
+  enemies.push(b);
+  boss = b;
+  addFloat(player.x, player.y - 90, '⚠ ' + def.n + ' が現れた ⚠', '#ff8a8a', 2.5, true);
+  shake = 12;
+  sBoss();
+}
+function updateSpawns(dt) {
+  spawnT -= dt;
+  if (spawnT <= 0) {
+    spawnT = Math.max(0.28, 1.05 - runT * 0.0011);
+    const batch = 1 + Math.floor(runT / 70);
+    for (let i = 0; i < batch; i++) {
+      const t = runT;
+      const pool = ['wisp'];
+      if (t > 40) pool.push('moth', 'moth');
+      if (t > 90) pool.push('shade', 'shade');
+      if (t > 200) pool.push('oni', 'oni');
+      if (t > 300) pool.push('golem');
+      if (t > 380) pool.push('oni', 'golem');
+      spawnEnemy(pool[(Math.random() * pool.length) | 0]);
+    }
+  }
+  if (runT >= eliteAt) {
+    eliteAt += 65;
+    const pool = ['shade', 'oni', 'wisp', 'golem'];
+    spawnEnemy(pool[(Math.random() * pool.length) | 0], true);
+  }
+  if (bossIdx < BOSSES.length && runT >= BOSSES[bossIdx].t && !boss) {
+    spawnBoss(BOSSES[bossIdx]);
+    bossIdx++;
+  }
+}
+
+// ---------- レベルアップ ----------
+function makeCards() {
+  const opts = [];
+  const spellsFull = spells.length >= 5;
+  for (const id of ELEM_IDS) {
+    if (pending && spellsFull) {
+      const k = pairKey(pending, id);
+      if (!spells.some(s => s.key === k)) continue;
+    }
+    let sub;
+    if (pending) {
+      const k = pairKey(pending, id);
+      const ex = spells.find(s => s.key === k);
+      if (ex && ex.lvl >= 5) continue;
+      sub = ex ? '紡ぐ →『' + SPELLS[k].n + '』Lv' + (ex.lvl + 1)
+        : discovered.has(k) ? '紡ぐ →『' + SPELLS[k].n + '』'
+        : '紡ぐ → ？？？（未知の紋章）';
+    } else {
+      sub = '手に取る（次の元素と紡がれる）';
+    }
+    opts.push({ kind: 'elem', id, n: ELEMS[id].n + 'の元素', d: sub, w: 3 });
+  }
+  for (const s of STATCARDS) opts.push({ kind: 'stat', id: s.id, n: s.n, d: s.d, w: 1.2 });
+  // 重み付きで3枚（重複なし）
+  const picked = [];
+  const pool = opts.slice();
+  while (picked.length < 3 && pool.length) {
+    let tw = 0;
+    for (const o of pool) tw += o.w;
+    let v = Math.random() * tw;
+    let idx = 0;
+    for (; idx < pool.length; idx++) { v -= pool[idx].w; if (v <= 0) break; }
+    idx = Math.min(idx, pool.length - 1);
+    picked.push(pool.splice(idx, 1)[0]);
+  }
+  return picked;
+}
+function applyCard(c) {
+  if (c.kind === 'elem') {
+    if (!pending) {
+      pending = c.id;
+      addFloat(player.x, player.y - 40, ELEMS[c.id].n + 'の元素を手にした', ELEMS[c.id].c, 1.2);
+    } else {
+      const k = pairKey(pending, c.id);
+      pending = null;
+      const ex = spells.find(s => s.key === k);
+      if (ex) {
+        ex.lvl = Math.min(5, ex.lvl + 1);
+        addFloat(player.x, player.y - 40, '『' + SPELLS[k].n + '』 Lv' + ex.lvl, spellColors(k)[0], 1.4, true);
+      } else {
+        spells.push({ key: k, lvl: 1, timer: 0.3, tick: 0 });
+        discover(k);
+        addFloat(player.x, player.y - 24, '『' + SPELLS[k].n + '』を編んだ！', spellColors(k)[0], 1.6, true);
+      }
+      burst(player.x, player.y, spellColors(k)[1], 24, 220, 4);
+    }
+  } else {
+    const p = player;
+    if (c.id === 'might') p.might += 0.12;
+    if (c.id === 'haste') p.haste *= 0.92;
+    if (c.id === 'vit') { p.maxhp += 25; p.hp = Math.min(p.maxhp, p.hp + p.maxhp / 2); }
+    if (c.id === 'swift') p.spd *= 1.1;
+    if (c.id === 'lure') p.magnet *= 1.4;
+    if (c.id === 'mend') p.regen += 0.6;
+  }
+  if (levelsPending > 0) { levelsPending--; cards = makeCards(); }
+  else { cards = null; state = 'play'; }
+}
+function gainXP(v) {
+  xp += v;
+  while (xp >= xpNeed) {
+    xp -= xpNeed;
+    lvl++;
+    xpNeed = Math.floor(5 + lvl * 2.9);
+    levelsPending++;
+  }
+  if (levelsPending > 0 && state === 'play') {
+    levelsPending--;
+    cards = makeCards();
+    state = 'levelup';
+    sLevel();
+  }
+}
+
+function endRun(win) {
+  bestTime = Math.max(bestTime, Math.floor(runT));
+  const bonus = win ? Math.round(100 * (1 + meta.luck * 0.15)) : 0;
+  shardsRun += bonus;
+  meta.shards += shardsRun;
+  if (win) hasWon = true;
+  saveMeta();
+  runResult = win ? 'win' : 'over';
+  state = win ? 'win' : 'over';
+  if (win) sWin(); else sLose();
+}
+function winRun() { endRun(true); }
+
+// ---------- 更新 ----------
+function update(dt) {
+  time += dt;
+  shake = Math.max(0, shake - dt * 40);
+  for (const f of floats) { f.y -= 30 * dt; f.life -= dt; }
+  floats = floats.filter(f => f.life > 0);
+  for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.96; p.vy *= 0.96; p.life -= dt; }
+  parts = parts.filter(p => p.life > 0);
+  for (const b of beams) b.life -= dt;
+  beams = beams.filter(b => b.life > 0);
+
+  if (state !== 'play') return;
+  runT += dt;
+
+  // プレイヤー移動
+  let mx = 0, my = 0;
+  if (keys.ArrowLeft || keys.a) mx -= 1;
+  if (keys.ArrowRight || keys.d) mx += 1;
+  if (keys.ArrowUp || keys.w) my -= 1;
+  if (keys.ArrowDown || keys.s) my += 1;
+  if (joy) { mx = joy.dx; my = joy.dy; }
+  const ml = Math.hypot(mx, my);
+  player.moving = ml > 0.15;
+  if (player.moving) {
+    mx /= ml; my /= ml;
+    player.dirx = mx; player.diry = my;
+    if (Math.abs(mx) > 0.2) player.facing = mx > 0 ? 1 : -1;
+    player.x += mx * player.spd * dt;
+    player.y += my * player.spd * dt;
+  }
+  player.hp = Math.min(player.maxhp, player.hp + player.regen * dt);
+  player.hurtT = Math.max(0, player.hurtT - dt);
+
+  updateSpawns(dt);
+  updateSpells(dt);
+
+  // 弾
+  for (const s of shots) {
+    if (s.homing > 0) {
+      const e = nearestEnemy(s.x, s.y, 300);
+      if (e) {
+        const a = Math.atan2(e.y - s.y, e.x - s.x);
+        const cur = Math.atan2(s.vy, s.vx);
+        let da = a - cur;
+        while (da > Math.PI) da -= TAU;
+        while (da < -Math.PI) da += TAU;
+        const na = cur + clamp(da, -s.homing * dt, s.homing * dt);
+        const sp = Math.hypot(s.vx, s.vy);
+        s.vx = Math.cos(na) * sp; s.vy = Math.sin(na) * sp;
+      }
+    }
+    if (s.boomerang) {
+      s.phase += dt;
+      if (s.phase > 0.55) {
+        const a = Math.atan2(player.y - s.y, player.x - s.x);
+        const sp = Math.hypot(s.vx, s.vy) + 600 * dt;
+        s.vx += (Math.cos(a) * sp - s.vx) * 4 * dt;
+        s.vy += (Math.sin(a) * sp - s.vy) * 4 * dt;
+        if (dist2(s.x, s.y, player.x, player.y) < 30 * 30 && s.phase > 0.9) s.life = 0;
+      }
+      s.spin += dt * 12;
+    }
+    s.x += s.vx * dt; s.y += s.vy * dt;
+    s.life -= dt;
+    for (const e of enemies) {
+      if (e.dead) continue;
+      if (dist2(s.x, s.y, e.x, e.y) < (s.r + e.r) ** 2) {
+        if (s.boomerang) {
+          if (!e.hcd[s.key] || time - e.hcd[s.key] > 0.5) {
+            e.hcd[s.key] = time;
+            hitEnemy(e, s.dmg, s.st, s.key);
+          }
+          continue;
+        }
+        hitEnemy(e, s.dmg, s.st, s.key);
+        if (s.boomR) {
+          burst(s.x, s.y, s.c2, 16, 200, 4);
+          for (const e2 of enemies) {
+            if (!e2.dead && e2 !== e && dist2(s.x, s.y, e2.x, e2.y) < (s.boomR + e2.r) ** 2) hitEnemy(e2, s.dmg * 0.7, s.st, s.key);
+          }
+          s.life = 0;
+          break;
+        }
+        if (s.pierce-- <= 0) { s.life = 0; break; }
+      }
+    }
+  }
+  shots = shots.filter(s => s.life > 0);
+
+  for (const n of novas) {
+    n.r += n.vr * dt;
+    for (const e of enemies) {
+      if (e.dead || n.hit.has(e)) continue;
+      const d = Math.sqrt(dist2(n.x, n.y, e.x, e.y));
+      if (Math.abs(d - n.r) < e.r + 14) { n.hit.add(e); hitEnemy(e, n.dmg, n.st, n.key); }
+    }
+  }
+  novas = novas.filter(n => n.r < n.maxr);
+
+  for (const st of strikes) {
+    st.delay -= dt;
+    if (st.delay <= 0 && !st.done) {
+      st.done = true;
+      burst(st.x, st.y, st.c2, 14, 220, 4);
+      shake = Math.min(shake + 2, 8);
+      for (const e of enemies) {
+        if (!e.dead && dist2(st.x, st.y, e.x, e.y) < (st.r + e.r) ** 2) hitEnemy(e, st.dmg, st.st, st.key);
+      }
+    }
+    if (st.done) st.flash -= dt;
+  }
+  strikes = strikes.filter(s => !s.done || s.flash > 0);
+
+  for (const z of zones) {
+    z.life -= dt;
+    // ふらふらと敵の多い方へ
+    const e = nearestEnemy(z.x, z.y, 400);
+    if (e) { z.vx += (e.x - z.x) * 0.3 * dt; z.vy += (e.y - z.y) * 0.3 * dt; }
+    const vl = Math.hypot(z.vx, z.vy) || 1;
+    if (vl > 60) { z.vx *= 60 / vl; z.vy *= 60 / vl; }
+    z.x += z.vx * dt; z.y += z.vy * dt;
+    z.tt -= dt;
+    if (z.tt <= 0) {
+      z.tt = z.tick;
+      for (const en of enemies) {
+        if (!en.dead && dist2(z.x, z.y, en.x, en.y) < (z.r + en.r) ** 2) hitEnemy(en, z.dmg, z.st, z.key);
+      }
+    }
+  }
+  zones = zones.filter(z => z.life > 0);
+
+  // 敵
+  for (const e of enemies) {
+    if (e.dead) continue;
+    e.flash = Math.max(0, e.flash - dt);
+    if (e.brn > 0) {
+      e.brn -= dt; e.brnT -= dt;
+      if (e.brnT <= 0) { e.brnT = 0.5; e.hp -= 3 * player.might; if (e.hp <= 0) { killEnemy(e); continue; } }
+    }
+    if (e.slw > 0) e.slw -= dt;
+    if (e.frz > 0) { e.frz -= dt; continue; }
+    let sp = e.spd * (e.slw > 0 ? 0.45 : 1);
+    if (e.boss) {
+      e.dashT -= dt;
+      if (e.dashT <= 0) { e.dashT = 6; e.dashing = 0.9; }
+      if (e.dashing > 0) { e.dashing -= dt; sp *= 2.6; }
+      e.minionT -= dt;
+      if (e.minionT <= 0) { e.minionT = 9; for (let i = 0; i < 3; i++) spawnEnemy(runT > 300 ? 'oni' : 'shade'); }
+    }
+    const a = Math.atan2(player.y - e.y, player.x - e.x);
+    e.wob += dt * 3;
+    const wob = e.type === 'moth' ? Math.sin(e.wob * 2.4) * 0.8 : 0;
+    e.x += Math.cos(a + wob) * sp * dt;
+    e.y += Math.sin(a + wob) * sp * dt;
+    // 敵同士の押し合い（軽量）
+    // プレイヤー接触
+    if (dist2(e.x, e.y, player.x, player.y) < (e.r + 14) ** 2) {
+      player.hp -= e.dmg * dt * 0.6;
+      player.hurtT = 0.25;
+      sHurt();
+    }
+  }
+  enemies = enemies.filter(e => !e.dead);
+
+  // ジェムと宝箱
+  for (const g of gems) {
+    const d = Math.sqrt(dist2(g.x, g.y, player.x, player.y));
+    if (d < player.magnet) {
+      const pull = (1 - d / player.magnet) * 700 + 140;
+      g.x += (player.x - g.x) / (d || 1) * pull * dt;
+      g.y += (player.y - g.y) / (d || 1) * pull * dt;
+    }
+    if (d < 18) { g.got = true; gainXP(g.v); sPick(); }
+  }
+  gems = gems.filter(g => !g.got);
+  if (gems.length > 300) gems.splice(0, gems.length - 300);
+  for (const c of chests) {
+    if (dist2(c.x, c.y, player.x, player.y) < 26 * 26) {
+      c.got = true;
+      levelsPending++;
+      addFloat(c.x, c.y - 20, '宝箱を開けた！', '#ffe9a8', 1.2, true);
+      burst(c.x, c.y, '#ffe9a8', 20, 200, 4);
+      if (state === 'play') {
+        levelsPending--;
+        cards = makeCards();
+        state = 'levelup';
+        sLevel();
+      }
+    }
+  }
+  chests = chests.filter(c => !c.got);
+
+  // 時間切れ勝利（最終ボスを倒せなくても10分生存でクリア）
+  if (runT >= WIN_TIME) { winRun(); return; }
+  if (player.hp <= 0) { player.hp = 0; endRun(false); return; }
+  updateBGM();
+}
+
+// ---------- 描画 ----------
+function drawWorld() {
+  // 夜の森の地面
+  const g = ctx.createLinearGradient(0, 0, 0, VH);
+  g.addColorStop(0, '#0a0820');
+  g.addColorStop(1, '#0d1426');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, VW, VH);
+
+  const camx = player ? player.x : 0, camy = player ? player.y : 0;
+  // 月明かり
+  const lg = ctx.createRadialGradient(VW / 2, VH / 2, 40, VW / 2, VH / 2, Math.max(VW, VH) * 0.6);
+  lg.addColorStop(0, 'rgba(120,110,200,0.14)');
+  lg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = lg;
+  ctx.fillRect(0, 0, VW, VH);
+
+  // 木と光る草（ハッシュグリッド）
+  const cell = 150;
+  const x0 = Math.floor((camx - VW / 2 - cell) / cell), x1 = Math.floor((camx + VW / 2 + cell) / cell);
+  const y0 = Math.floor((camy - VH / 2 - cell) / cell), y1 = Math.floor((camy + VH / 2 + cell) / cell);
+  for (let cx = x0; cx <= x1; cx++) {
+    for (let cy = y0; cy <= y1; cy++) {
+      const h = hash2(cx, cy);
+      const wx = cx * cell + (hash2(cx + 7, cy) - 0.5) * cell * 0.8;
+      const wy = cy * cell + (hash2(cx, cy + 13) - 0.5) * cell * 0.8;
+      const sx = wx - camx + VW / 2, sy = wy - camy + VH / 2;
+      if (h < 0.38) {
+        // 木のシルエット
+        const th = 46 + h * 80;
+        ctx.fillStyle = 'rgba(10,16,34,0.9)';
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - th);
+        ctx.lineTo(sx - th * 0.36, sy);
+        ctx.lineTo(sx + th * 0.36, sy);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = 'rgba(16,24,46,0.9)';
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - th * 1.05);
+        ctx.lineTo(sx - th * 0.26, sy - th * 0.35);
+        ctx.lineTo(sx + th * 0.26, sy - th * 0.35);
+        ctx.closePath();
+        ctx.fill();
+      } else if (h < 0.5) {
+        // 光るキノコ・花
+        const tw = 0.5 + 0.5 * Math.sin(time * 1.6 + h * 20);
+        ctx.fillStyle = h < 0.44 ? `rgba(110,220,255,${0.25 + tw * 0.3})` : `rgba(190,140,255,${0.25 + tw * 0.3})`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 3 + tw * 2, 0, TAU);
+        ctx.fill();
+      }
+    }
+  }
+  // 蛍
+  for (let i = 0; i < 14; i++) {
+    const fx = (hash2(i, 3) * 4000 + Math.sin(time * 0.4 + i) * 80) % 4000;
+    const fy = (hash2(i, 8) * 4000 + Math.cos(time * 0.3 + i * 2) * 60) % 4000;
+    const sx = ((fx - camx) % 4000 + 6000) % 4000 - 2000 + VW / 2;
+    const sy = ((fy - camy) % 4000 + 6000) % 4000 - 2000 + VH / 2;
+    if (sx < -10 || sx > VW + 10 || sy < -10 || sy > VH + 10) continue;
+    const tw = 0.4 + 0.6 * Math.sin(time * 2 + i * 1.7);
+    ctx.fillStyle = `rgba(220,255,160,${0.5 * tw})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 2, 0, TAU);
+    ctx.fill();
+  }
+}
+const sx = wx => wx - player.x + VW / 2;
+const sy = wy => wy - player.y + VH / 2;
+
+function drawEnemy(e) {
+  const x = sx(e.x), y = sy(e.y);
+  if (x < -80 || x > VW + 80 || y < -80 || y > VH + 80) return;
+  ctx.save();
+  const c = e.flash > 0 ? '#ffffff' : e.frz > 0 ? '#aee4ff' : e.c;
+  ctx.shadowColor = c;
+  ctx.shadowBlur = e.boss ? 30 : 10;
+  ctx.fillStyle = c;
+  ctx.globalAlpha = e.frz > 0 ? 0.8 : 1;
+  const wb = 1 + Math.sin(e.wob * 2) * 0.06;
+  ctx.beginPath();
+  ctx.arc(x, y, e.r * wb, 0, TAU);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  if (e.boss || e.elite) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, e.r * wb + 4, time * 2, time * 2 + TAU * 0.7);
+    ctx.stroke();
+  }
+  // 角（鬼・ボス）
+  if (e.type === 'oni' || e.boss) {
+    ctx.fillStyle = c;
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(x + s * e.r * 0.45, y - e.r * 0.75);
+      ctx.lineTo(x + s * e.r * 0.7, y - e.r * 1.35);
+      ctx.lineTo(x + s * e.r * 0.85, y - e.r * 0.6);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+  // 目
+  ctx.fillStyle = e.boss ? '#ff3a3a' : '#1a1030';
+  const er = Math.max(1.5, e.r * 0.16);
+  ctx.beginPath(); ctx.arc(x - e.r * 0.32, y - e.r * 0.1, er, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + e.r * 0.32, y - e.r * 0.1, er, 0, TAU); ctx.fill();
+  if (e.brn > 0) {
+    ctx.fillStyle = `rgba(255,120,40,${0.5 + 0.3 * Math.sin(time * 20)})`;
+    ctx.beginPath(); ctx.arc(x + rnd(-4, 4), y - e.r - rnd(0, 6), 3, 0, TAU); ctx.fill();
+  }
+  // HPバー（強敵のみ）
+  if ((e.elite || e.boss) && e.hp < e.maxhp) {
+    const w = e.r * 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(x - w / 2, y - e.r - 12, w, 4);
+    ctx.fillStyle = '#ff5c7a';
+    ctx.fillRect(x - w / 2, y - e.r - 12, w * clamp(e.hp / e.maxhp, 0, 1), 4);
+  }
+  ctx.restore();
+}
+
+function drawPlayer() {
+  const x = VW / 2, y = VH / 2;
+  const bob = player.moving ? Math.sin(time * 12) * 2 : Math.sin(time * 2.5) * 1.2;
+  ctx.save();
+  ctx.translate(x, y + bob);
+  ctx.scale(player.facing, 1);
+  if (player.hurtT > 0) ctx.globalAlpha = 0.6 + 0.4 * Math.sin(time * 40);
+  // 杖の光
+  ctx.shadowColor = '#cfc4ff';
+  ctx.shadowBlur = 16;
+  ctx.fillStyle = '#cfc4ff';
+  ctx.beginPath();
+  ctx.arc(13, -16, 4 + Math.sin(time * 4) * 1, 0, TAU);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#6a5a8a';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(13, -13); ctx.lineTo(11, 12); ctx.stroke();
+  // マント
+  ctx.fillStyle = '#3a2a6a';
+  ctx.beginPath();
+  ctx.moveTo(0, -14);
+  ctx.quadraticCurveTo(-13, 4, -9, 16);
+  ctx.lineTo(9, 16);
+  ctx.quadraticCurveTo(11, 2, 0, -14);
+  ctx.fill();
+  // 顔
+  ctx.fillStyle = '#ffe8d8';
+  ctx.beginPath(); ctx.arc(0, -16, 7.5, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#2a1a40';
+  ctx.beginPath(); ctx.arc(2.5, -16, 1.2, 0, TAU); ctx.fill();
+  // 帽子
+  ctx.fillStyle = '#4a3788';
+  ctx.beginPath();
+  ctx.ellipse(0, -21, 11, 3.5, 0, 0, TAU);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-7, -22);
+  ctx.quadraticCurveTo(-2, -40, 6, -34);
+  ctx.quadraticCurveTo(2, -32, 7, -22);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawPlayEffects() {
+  // オーラ・オービット（常時系）
+  for (const sp of spells) {
+    const def = SPELLS[sp.key];
+    const st = spellStats(sp);
+    const [c1, c2] = spellColors(sp.key);
+    if (def.a === 'aura') {
+      const rad = def.p.rad * st.scale;
+      ctx.strokeStyle = c2 + '66';
+      ctx.lineWidth = 3 + Math.sin(time * 3) * 1.5;
+      ctx.beginPath();
+      ctx.arc(VW / 2, VH / 2, rad, 0, TAU);
+      ctx.stroke();
+    }
+    if (def.a === 'orbit') {
+      const n = (def.p.count || 2) + (sp.lvl - 1);
+      const rad = def.p.rad * st.scale;
+      for (let i = 0; i < n; i++) {
+        const a = time * def.p.rot + i * TAU / n;
+        const ox = VW / 2 + Math.cos(a) * rad, oy = VH / 2 + Math.sin(a) * rad;
+        ctx.save();
+        ctx.shadowColor = c2; ctx.shadowBlur = 12;
+        ctx.fillStyle = c1;
+        ctx.beginPath(); ctx.arc(ox, oy, def.p.or, 0, TAU); ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+  // 弾
+  for (const s of shots) {
+    const x = sx(s.x), y = sy(s.y);
+    ctx.save();
+    ctx.shadowColor = s.c2; ctx.shadowBlur = 10;
+    ctx.fillStyle = s.c1;
+    if (s.boomerang) {
+      ctx.translate(x, y);
+      ctx.rotate(s.spin);
+      ctx.strokeStyle = s.c1;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(0, 0, s.r, -0.5, Math.PI + 0.5);
+      ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.arc(x, y, s.r, 0, TAU); ctx.fill();
+    }
+    ctx.restore();
+  }
+  // ノヴァ
+  for (const n of novas) {
+    ctx.save();
+    ctx.globalAlpha = clamp(1 - n.r / n.maxr, 0, 1) * 0.9;
+    ctx.strokeStyle = n.c1;
+    ctx.shadowColor = n.c2; ctx.shadowBlur = 16;
+    ctx.lineWidth = 9;
+    ctx.beginPath();
+    ctx.arc(sx(n.x), sy(n.y), n.r, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+  }
+  // ストライク
+  for (const st of strikes) {
+    const x = sx(st.x), y = sy(st.y);
+    if (!st.done) {
+      ctx.strokeStyle = st.c2 + '88';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath(); ctx.arc(x, y, st.r, 0, TAU); ctx.stroke();
+      ctx.setLineDash([]);
+    } else if (st.flash > 0) {
+      ctx.save();
+      ctx.globalAlpha = st.flash / 0.22;
+      ctx.fillStyle = st.c1;
+      ctx.shadowColor = st.c2; ctx.shadowBlur = 20;
+      ctx.beginPath(); ctx.arc(x, y, st.r, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(x - 3, y - 220, 6, 220);
+      ctx.restore();
+    }
+  }
+  // ゾーン
+  for (const z of zones) {
+    const x = sx(z.x), y = sy(z.y);
+    ctx.save();
+    ctx.globalAlpha = clamp(z.life, 0, 1) * 0.5;
+    ctx.fillStyle = z.c2;
+    ctx.shadowColor = z.c2; ctx.shadowBlur = 24;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.arc(x + Math.sin(time * 2 + i * 2) * z.r * 0.3, y + Math.cos(time * 1.5 + i) * z.r * 0.2, z.r * 0.55, 0, TAU);
+      ctx.fill();
+    }
+    if (Math.random() < 0.15) {
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x + rnd(-z.r, z.r) * 0.5, y);
+      ctx.lineTo(x + rnd(-z.r, z.r) * 0.5, y + z.r * 0.8);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // チェイン
+  for (const b of beams) {
+    ctx.save();
+    ctx.globalAlpha = b.life / 0.25;
+    ctx.strokeStyle = b.c;
+    ctx.shadowColor = b.c; ctx.shadowBlur = 8;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    const x1 = sx(b.x1), y1 = sy(b.y1), x2 = sx(b.x2), y2 = sy(b.y2);
+    ctx.moveTo(x1, y1);
+    const mx = (x1 + x2) / 2 + rnd(-14, 14), my = (y1 + y2) / 2 + rnd(-14, 14);
+    ctx.lineTo(mx, my);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.restore();
+  }
+  // ジェム・宝箱
+  for (const g of gems) {
+    const x = sx(g.x), y = sy(g.y);
+    if (x < -20 || x > VW + 20 || y < -20 || y > VH + 20) continue;
+    ctx.save();
+    ctx.shadowColor = '#7df0c8'; ctx.shadowBlur = 8;
+    ctx.fillStyle = g.v >= 6 ? '#ffd76a' : '#7df0c8';
+    ctx.translate(x, y);
+    ctx.rotate(time * 2 + g.x);
+    ctx.fillRect(-g.r * 0.7, -g.r * 0.7, g.r * 1.4, g.r * 1.4);
+    ctx.restore();
+  }
+  for (const c of chests) {
+    const x = sx(c.x), y = sy(c.y);
+    ctx.save();
+    ctx.shadowColor = '#ffe9a8'; ctx.shadowBlur = 14 + Math.sin(time * 4) * 6;
+    ctx.fillStyle = '#a8762a';
+    ctx.fillRect(x - 11, y - 8, 22, 15);
+    ctx.fillStyle = '#ffd76a';
+    ctx.fillRect(x - 11, y - 11, 22, 6);
+    ctx.fillRect(x - 2, y - 8, 4, 15);
+    ctx.restore();
+  }
+  // パーティクル
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of parts) {
+    ctx.globalAlpha = clamp(p.life / 0.5, 0, 1);
+    ctx.fillStyle = p.c;
+    ctx.beginPath();
+    ctx.arc(sx(p.x), sy(p.y), p.s, 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+  // フロートテキスト
+  ctx.save();
+  ctx.textAlign = 'center';
+  for (const f of floats) {
+    ctx.globalAlpha = clamp(f.life / f.max * 1.5, 0, 1);
+    ctx.fillStyle = f.color;
+    ctx.font = (f.big ? 'bold 19px' : '12px') + ' sans-serif';
+    ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 4;
+    ctx.fillText(f.text, sx(f.x), sy(f.y));
+  }
+  ctx.restore();
+}
+
+function fmtTime(t) {
+  const m = Math.floor(t / 60), s = Math.floor(t % 60);
+  return m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+function drawHUD() {
+  ctx.save();
+  // XPバー（最上部）
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0, 0, VW, 10);
+  ctx.fillStyle = '#7df0c8';
+  ctx.fillRect(0, 0, VW * clamp(xp / xpNeed, 0, 1), 10);
+  // 時間
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 24px sans-serif';
+  ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 4;
+  ctx.fillText(fmtTime(runT), VW / 2, 38);
+  ctx.font = '12px sans-serif';
+  ctx.fillStyle = '#b8b0e0';
+  ctx.fillText('Lv ' + lvl + '　撃破 ' + kills + '　欠片 +' + shardsRun, VW / 2, 58);
+  ctx.shadowBlur = 0;
+  // HPバー
+  const hw = Math.min(260, VW * 0.5);
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(VW / 2 - hw / 2, 66, hw, 12);
+  const hr = clamp(player.hp / player.maxhp, 0, 1);
+  ctx.fillStyle = hr > 0.35 ? '#6ee887' : '#ff5c7a';
+  ctx.fillRect(VW / 2 - hw / 2, 66, hw * hr, 12);
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.strokeRect(VW / 2 - hw / 2, 66, hw, 12);
+  // ボスHP
+  if (boss) {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(VW * 0.15, VH - 86, VW * 0.7, 10);
+    ctx.fillStyle = '#c060ff';
+    ctx.fillRect(VW * 0.15, VH - 86, VW * 0.7 * clamp(boss.hp / boss.maxhp, 0, 1), 10);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#e8c8ff';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillText(boss.bname, VW / 2, VH - 94);
+  }
+  // スペルアイコン（左下）
+  let ix = 22;
+  for (const sp of spells) {
+    const [c1, c2] = spellColors(sp.key);
+    ctx.save();
+    ctx.shadowColor = c2; ctx.shadowBlur = 8;
+    const g = ctx.createRadialGradient(ix - 3, VH - 38, 2, ix, VH - 35, 14);
+    g.addColorStop(0, c1); g.addColorStop(1, c2);
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(ix, VH - 35, 14, 0, TAU); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Lv' + sp.lvl, ix, VH - 14);
+    ix += 36;
+  }
+  // 手の中の元素（ペンディング）
+  if (pending) {
+    ctx.save();
+    ctx.shadowColor = ELEMS[pending].g; ctx.shadowBlur = 12 + Math.sin(time * 4) * 4;
+    ctx.fillStyle = ELEMS[pending].c;
+    ctx.beginPath(); ctx.arc(ix + 6, VH - 35, 10, 0, TAU); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = '#d8d0f8';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('手の中', ix + 6, VH - 14);
+  }
+  // ポーズボタン
+  uiButtons.length = 0;
+  addBtn(VW - 46, 18, 34, 34, () => { state = 'pause'; }, b => {
+    ctx.strokeStyle = 'rgba(200,190,255,0.7)';
+    ctx.fillStyle = 'rgba(40,30,80,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(b.x + 17, b.y + 17, 17, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#d8d0f8';
+    ctx.fillRect(b.x + 11, b.y + 10, 4, 14);
+    ctx.fillRect(b.x + 19, b.y + 10, 4, 14);
+  });
+  // バーチャルスティック
+  if (joy) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(joy.ox, joy.oy, 44, 0, TAU); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath(); ctx.arc(joy.ox + joy.dx * 40, joy.oy + joy.dy * 40, 18, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function addBtn(x, y, w, h, cb, draw) {
+  const b = { x, y, w, h, cb };
+  uiButtons.push(b);
+  if (draw) { ctx.save(); draw(b); ctx.restore(); }
+}
+function drawBtnBox(b, label, accent) {
+  ctx.save();
+  ctx.fillStyle = accent ? 'rgba(110,80,200,0.55)' : 'rgba(40,32,80,0.6)';
+  ctx.strokeStyle = accent ? '#b9a3ff' : 'rgba(170,160,230,0.5)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(b.x, b.y, b.w, b.h, 12);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 + 1);
+  ctx.restore();
+}
+
+function drawTitle() {
+  uiButtons.length = 0;
+  // 蛍と月
+  ctx.save();
+  ctx.shadowColor = '#fff8d0'; ctx.shadowBlur = 60;
+  ctx.fillStyle = '#fff6d8';
+  ctx.beginPath(); ctx.arc(VW * 0.78, VH * 0.16, 44, 0, TAU); ctx.fill();
+  ctx.restore();
+  for (let i = 0; i < 24; i++) {
+    const tw = 0.4 + 0.6 * Math.sin(time * 1.5 + i * 2.3);
+    ctx.fillStyle = `rgba(220,255,170,${0.4 * tw})`;
+    ctx.beginPath();
+    ctx.arc((hash2(i, 1) * VW + Math.sin(time * 0.5 + i) * 30 + VW) % VW, (hash2(i, 5) * VH + Math.cos(time * 0.4 + i) * 20 + VH) % VH, 2.2, 0, TAU);
+    ctx.fill();
+  }
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.shadowColor = '#9d8bff'; ctx.shadowBlur = 24;
+  ctx.font = `bold ${Math.min(54, VW * 0.1)}px "Hiragino Mincho ProN","Yu Mincho",serif`;
+  ctx.fillText('月詠の魔導書', VW / 2, VH * 0.24);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#b9aef0';
+  ctx.font = '16px serif';
+  ctx.fillText('〜 Lunar Grimoire 〜', VW / 2, VH * 0.24 + 34);
+  ctx.fillStyle = '#d8d2ff';
+  ctx.font = '13px sans-serif';
+  ctx.fillText('5つの元素を紡ぎ、15のスペルを発見せよ。', VW / 2, VH * 0.24 + 70);
+  ctx.fillText('押し寄せる夜の精霊から10分間生き延びれば勝利。', VW / 2, VH * 0.24 + 92);
+
+  const bw = Math.min(280, VW * 0.7);
+  addBtn(VW / 2 - bw / 2, VH * 0.5, bw, 56, () => { ensureAudio(); newRun(); }, b => drawBtnBox(b, '▶ 夜の森へ', true));
+  addBtn(VW / 2 - bw / 2, VH * 0.5 + 72, bw, 50, () => { state = 'shop'; }, b => drawBtnBox(b, '✦ 月の祭壇（恒久強化） ' + meta.shards + '欠片'));
+  addBtn(VW / 2 - bw / 2, VH * 0.5 + 134, bw, 50, () => { state = 'grimoire'; }, b => drawBtnBox(b, '📖 魔導書（' + discovered.size + ' / 15 発見）'));
+  addBtn(VW - 50, VH - 50, 36, 36, () => setMuted(!muted), b => {
+    ctx.font = '18px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(muted ? '🔇' : '🔊', b.x + 18, b.y + 18);
+  });
+  ctx.fillStyle = '#8a82c0';
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'center';
+  let info = '操作：ドラッグ / WASD・矢印キー　攻撃は自動';
+  ctx.fillText(info, VW / 2, VH - 64);
+  if (bestTime > 0) ctx.fillText('最長生存 ' + fmtTime(bestTime) + (hasWon ? '　👑クリア済み' : ''), VW / 2, VH - 24);
+}
+
+function drawShop() {
+  uiButtons.length = 0;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 26px serif';
+  ctx.fillText('月の祭壇', VW / 2, 56);
+  ctx.fillStyle = '#ffe9a8';
+  ctx.font = 'bold 16px sans-serif';
+  ctx.fillText('✦ 月の欠片 ' + meta.shards, VW / 2, 88);
+  const bw = Math.min(420, VW * 0.92);
+  let y = 120;
+  for (const item of SHOP) {
+    const lv = meta[item.id] || 0;
+    const maxed = lv >= 5;
+    const cost = shopCost(lv);
+    const can = !maxed && meta.shards >= cost;
+    const yy = y;
+    addBtn(VW / 2 - bw / 2, yy, bw, 62, () => {
+      if (!maxed && meta.shards >= shopCost(meta[item.id] || 0)) {
+        meta.shards -= shopCost(meta[item.id] || 0);
+        meta[item.id] = (meta[item.id] || 0) + 1;
+        saveMeta();
+        sLevel();
+      }
+    }, b => {
+      ctx.fillStyle = can ? 'rgba(90,60,160,0.55)' : 'rgba(40,32,70,0.55)';
+      ctx.strokeStyle = can ? '#b9a3ff' : 'rgba(150,140,200,0.35)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 10); ctx.fill(); ctx.stroke();
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.fillText(item.n + '　' + '★'.repeat(lv) + '☆'.repeat(5 - lv), b.x + 14, b.y + 24);
+      ctx.fillStyle = '#b8b0e0';
+      ctx.font = '12px sans-serif';
+      ctx.fillText(item.d, b.x + 14, b.y + 45);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = maxed ? '#8a82c0' : can ? '#ffe9a8' : '#ff8a8a';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText(maxed ? 'MAX' : cost + '欠片', b.x + b.w - 14, b.y + 34);
+    });
+    y += 72;
+  }
+  addBtn(VW / 2 - 90, y + 14, 180, 48, () => { state = 'title'; }, b => drawBtnBox(b, '← もどる'));
+}
+
+function drawGrimoire() {
+  uiButtons.length = 0;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 26px serif';
+  ctx.fillText('魔導書 　' + discovered.size + ' / 15', VW / 2, 50);
+  ctx.fillStyle = '#b8b0e0';
+  ctx.font = '12px sans-serif';
+  ctx.fillText('元素2つの組み合わせでスペルが生まれる。すべて見つけられるか？', VW / 2, 76);
+  const keys2 = Object.keys(SPELLS);
+  const cols = VW > 560 ? 3 : 2;
+  const cw = Math.min(190, (VW - 40) / cols - 8), ch = 64;
+  const totalW = cols * (cw + 8);
+  let i = 0;
+  for (const k of keys2) {
+    const col = i % cols, row = (i / cols) | 0;
+    const x = VW / 2 - totalW / 2 + col * (cw + 8) + 4;
+    const y = 96 + row * (ch + 8);
+    const known = discovered.has(k);
+    const [c1, c2] = spellColors(k);
+    ctx.save();
+    ctx.fillStyle = known ? 'rgba(60,45,110,0.6)' : 'rgba(30,26,55,0.6)';
+    ctx.strokeStyle = known ? c2 + 'aa' : 'rgba(120,110,170,0.3)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(x, y, cw, ch, 8); ctx.fill(); ctx.stroke();
+    const [ea, eb] = k.split('+');
+    ctx.textAlign = 'left';
+    if (known) {
+      ctx.fillStyle = c1;
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText(SPELLS[k].n, x + 10, y + 20);
+      ctx.fillStyle = '#b8b0e0';
+      ctx.font = '10px sans-serif';
+      ctx.fillText(ELEMS[ea].n + '＋' + ELEMS[eb].n + '：' + SPELLS[k].d, x + 10, y + 38, cw - 20);
+    } else {
+      ctx.fillStyle = '#6a6298';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText('？？？', x + 10, y + 20);
+      ctx.font = '10px sans-serif';
+      ctx.fillText('まだ見ぬ紋章', x + 10, y + 38);
+    }
+    ctx.restore();
+    i++;
+  }
+  const rows = Math.ceil(15 / cols);
+  addBtn(VW / 2 - 90, 96 + rows * (ch + 8) + 10, 180, 48, () => { state = 'title'; }, b => drawBtnBox(b, '← もどる'));
+}
+
+function drawLevelup() {
+  ctx.fillStyle = 'rgba(5,3,15,0.72)';
+  ctx.fillRect(0, 0, VW, VH);
+  uiButtons.length = 0;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ffe9a8';
+  ctx.shadowColor = '#ffe9a8'; ctx.shadowBlur = 12;
+  ctx.font = 'bold 24px serif';
+  ctx.fillText('✦ 月の啓示 ✦', VW / 2, VH * 0.16);
+  ctx.shadowBlur = 0;
+  if (pending) {
+    ctx.fillStyle = ELEMS[pending].c;
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText('手の中の元素：' + ELEMS[pending].n + '（次の元素と紡がれる）', VW / 2, VH * 0.16 + 30);
+  }
+  const cw = Math.min(340, VW * 0.86), chh = 84;
+  for (let i = 0; i < cards.length; i++) {
+    const c = cards[i];
+    const y = VH * 0.26 + i * (chh + 16);
+    addBtn(VW / 2 - cw / 2, y, cw, chh, () => { applyCard(c); }, b => {
+      const isElem = c.kind === 'elem';
+      const col = isElem ? ELEMS[c.id].c : '#d8d0f8';
+      const gcol = isElem ? ELEMS[c.id].g : '#7a6ad0';
+      ctx.fillStyle = 'rgba(45,35,90,0.85)';
+      ctx.strokeStyle = gcol;
+      ctx.lineWidth = 2;
+      ctx.shadowColor = gcol; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 14); ctx.fill();
+      ctx.shadowBlur = 0; ctx.stroke();
+      if (isElem) {
+        ctx.save();
+        ctx.shadowColor = gcol; ctx.shadowBlur = 14;
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(b.x + 34, b.y + chh / 2, 16, 0, TAU); ctx.fill();
+        ctx.restore();
+      } else {
+        ctx.fillStyle = col;
+        ctx.font = '22px sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('✧', b.x + 34, b.y + chh / 2);
+      }
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 17px sans-serif';
+      ctx.fillText(c.n, b.x + 62, b.y + 34);
+      ctx.fillStyle = '#c8c0e8';
+      ctx.font = '12px sans-serif';
+      ctx.fillText(c.d, b.x + 62, b.y + 58, cw - 76);
+    });
+  }
+}
+
+function drawPause() {
+  ctx.fillStyle = 'rgba(5,3,15,0.7)';
+  ctx.fillRect(0, 0, VW, VH);
+  uiButtons.length = 0;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 30px serif';
+  ctx.fillText('小休止', VW / 2, VH * 0.3);
+  // 所持スペル一覧
+  ctx.font = '13px sans-serif';
+  let y = VH * 0.3 + 40;
+  for (const sp of spells) {
+    ctx.fillStyle = spellColors(sp.key)[0];
+    ctx.fillText('『' + SPELLS[sp.key].n + '』 Lv' + sp.lvl + '　— ' + SPELLS[sp.key].d, VW / 2, y);
+    y += 24;
+  }
+  addBtn(VW / 2 - 110, y + 24, 220, 52, () => { state = 'play'; }, b => drawBtnBox(b, '▶ 再開', true));
+  addBtn(VW / 2 - 110, y + 92, 220, 48, () => { endRun(false); }, b => drawBtnBox(b, '夜を諦める'));
+  addBtn(VW - 50, VH - 50, 36, 36, () => setMuted(!muted), b => {
+    ctx.font = '18px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(muted ? '🔇' : '🔊', b.x + 18, b.y + 18);
+  });
+}
+
+function drawEnd() {
+  const win = runResult === 'win';
+  ctx.fillStyle = 'rgba(5,3,15,0.78)';
+  ctx.fillRect(0, 0, VW, VH);
+  uiButtons.length = 0;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.shadowColor = win ? '#ffe9a8' : '#ff5c8a';
+  ctx.shadowBlur = 20;
+  ctx.font = `bold ${Math.min(40, VW * 0.08)}px serif`;
+  ctx.fillText(win ? '夜明けを迎えた──' : '月は欠け、夜に呑まれた…', VW / 2, VH * 0.22);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#d8d2ff';
+  ctx.font = '15px sans-serif';
+  const lines = [
+    '生存時間　' + fmtTime(runT),
+    '撃破数　' + kills,
+    '到達レベル　' + lvl,
+    '発見したスペル　' + discovered.size + ' / 15',
+    '獲得した月の欠片　+' + shardsRun,
+  ];
+  let y = VH * 0.34;
+  for (const l of lines) { ctx.fillText(l, VW / 2, y); y += 30; }
+  if (newDiscoveries.length) {
+    ctx.fillStyle = '#ffe9a8';
+    ctx.fillText('今夜の新発見：' + newDiscoveries.map(k => SPELLS[k].n).join('・'), VW / 2, y + 6);
+    y += 36;
+  }
+  addBtn(VW / 2 - 120, y + 24, 240, 54, () => { ensureAudio(); newRun(); }, b => drawBtnBox(b, '▶ もう一度夜へ', true));
+  addBtn(VW / 2 - 120, y + 94, 240, 48, () => { state = 'title'; }, b => drawBtnBox(b, '月の祭壇へ（強化する）'));
+}
+
+function render() {
+  ctx.save();
+  if (shake > 0) ctx.translate(rnd(-shake, shake) * 0.5, rnd(-shake, shake) * 0.5);
+  drawWorld();
+  if (state === 'title') drawTitle();
+  else if (state === 'shop') drawShop();
+  else if (state === 'grimoire') drawGrimoire();
+  else {
+    // プレイ系（play / levelup / pause / over / win）
+    drawPlayEffects();
+    for (const e of enemies) drawEnemy(e);
+    drawPlayer();
+    drawHUD();
+    if (player.hurtT > 0) {
+      ctx.fillStyle = `rgba(255,40,60,${player.hurtT * 0.5})`;
+      ctx.fillRect(0, 0, VW, VH);
+    }
+    if (state === 'levelup') drawLevelup();
+    if (state === 'pause') drawPause();
+    if (state === 'over' || state === 'win') drawEnd();
+  }
+  ctx.restore();
+}
+
+// ---------- 入力 ----------
+function hitButtons(x, y) {
+  for (const b of uiButtons) {
+    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { b.cb(); return true; }
+  }
+  return false;
+}
+cvs.addEventListener('pointerdown', e => {
+  ensureAudio();
+  const x = e.clientX, y = e.clientY;
+  if (state === 'play') {
+    if (hitButtons(x, y)) return;
+    joy = { ox: x, oy: y, dx: 0, dy: 0 };
+  }
+});
+cvs.addEventListener('pointermove', e => {
+  if (joy && state === 'play') {
+    const dx = e.clientX - joy.ox, dy = e.clientY - joy.oy;
+    const l = Math.hypot(dx, dy);
+    const m = Math.min(1, l / 44);
+    joy.dx = l ? dx / l * m : 0;
+    joy.dy = l ? dy / l * m : 0;
+  }
+});
+cvs.addEventListener('pointerup', e => {
+  ensureAudio();
+  if (state === 'play') { joy = null; return; }
+  hitButtons(e.clientX, e.clientY);
+  if (state !== 'play') joy = null;
+});
+cvs.addEventListener('pointercancel', () => { joy = null; });
+addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (e.key === 'm' || e.key === 'M') setMuted(!muted);
+  if ((e.key === 'p' || e.key === 'P' || e.key === 'Escape')) {
+    if (state === 'play') state = 'pause';
+    else if (state === 'pause') state = 'play';
+  }
+  if ((e.key === ' ' || e.key === 'Enter')) {
+    if (state === 'title') { ensureAudio(); newRun(); }
+    else if (state === 'over' || state === 'win') { ensureAudio(); newRun(); }
+    else if (state === 'levelup' && cards && cards.length) applyCard(cards[0]);
+  }
+  if (state === 'levelup' && cards) {
+    if (e.key === '1' && cards[0]) applyCard(cards[0]);
+    if (e.key === '2' && cards[1]) applyCard(cards[1]);
+    if (e.key === '3' && cards[2]) applyCard(cards[2]);
+  }
+});
+addEventListener('keyup', e => { keys[e.key] = false; });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && state === 'play') state = 'pause';
+});
+
+// roundRect ポリフィル（古いブラウザ用）
+if (!ctx.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+    this.moveTo(x + r, y);
+    this.arcTo(x + w, y, x + w, y + h, r);
+    this.arcTo(x + w, y + h, x, y + h, r);
+    this.arcTo(x, y + h, x, y, r);
+    this.arcTo(x, y, x + w, y, r);
+    this.closePath();
+    return this;
+  };
+}
+
+// ---------- メインループ ----------
+let lastT = performance.now();
+function loop(now) {
+  let dt = (now - lastT) / 1000;
+  lastT = now;
+  if (dt > 0.05) dt = 0.05;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
