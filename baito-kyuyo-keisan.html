@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>バイト想定給与シミュレーター</title>
+<!--
+  =====================================================================
+  バイト想定給与シミュレーター（単一ファイル / サーバー不要）
+
+  ・ブラウザでこのファイルを開くだけで動きます。
+  ・入力内容は画面上にだけ保持され、保存はしません（リロードで消えます）。
+  ・「壁」の金額はファイル末尾のスクリプト冒頭の WALL_SETTINGS にまとめてあります。
+    制度改正時はそこだけ書き換えてください。
+  =====================================================================
+-->
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --text: #1a1d21;
+    --sub: #5b6270;
+    --line: #d9dde3;
+    --accent: #1f6feb;
+    --warn-bg: #fff6e0;
+    --warn-line: #e2b64a;
+    --warn-text: #7a5400;
+    --over-bg: #ffeceb;
+    --over-line: #e08a84;
+    --over-text: #8a2d26;
+    --ok-bg: #f1f3f6;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171b;
+      --card: #1e2228;
+      --text: #eceff3;
+      --sub: #a3acba;
+      --line: #363c45;
+      --accent: #62a0ff;
+      --warn-bg: #3a3016;
+      --warn-line: #8a7228;
+      --warn-text: #ffd98a;
+      --over-bg: #3d1f1d;
+      --over-line: #8c4a45;
+      --over-text: #ffb3ac;
+      --ok-bg: #262b32;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 16px 14px 56px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Noto Sans JP", "Yu Gothic UI", sans-serif;
+    font-size: 18px;
+    line-height: 1.7;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .wrap { max-width: 640px; margin: 0 auto; }
+
+  h1 {
+    font-size: 22px;
+    margin: 0 0 4px;
+    line-height: 1.4;
+  }
+
+  .lead {
+    margin: 0 0 20px;
+    font-size: 15px;
+    color: var(--sub);
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px 16px;
+    margin-bottom: 18px;
+  }
+
+  h2 {
+    font-size: 18px;
+    margin: 0 0 14px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--line);
+  }
+
+  label {
+    display: block;
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .hint {
+    display: block;
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--sub);
+    margin-top: 2px;
+  }
+
+  .field { margin-bottom: 18px; }
+  .field:last-child { margin-bottom: 0; }
+
+  input[type="text"],
+  input[type="number"],
+  input[type="date"],
+  input[type="time"] {
+    width: 100%;
+    min-height: 48px;
+    padding: 10px 12px;
+    font-size: 17px;
+    font-family: inherit;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+
+  input:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  button {
+    font-family: inherit;
+    font-size: 16px;
+    min-height: 48px;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+
+  .btn-add {
+    width: 100%;
+    padding: 12px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--accent);
+    border: none;
+  }
+
+  .btn-del {
+    min-width: 48px;
+    padding: 0 12px;
+    color: var(--sub);
+    background: transparent;
+    border: 1px solid var(--line);
+  }
+
+  /* --- 勤務予定の行 --- */
+  .shift {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 14px;
+    background: var(--bg);
+  }
+
+  .shift-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .shift-no {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--sub);
+  }
+
+  .times {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  .times > div { flex: 1; }
+  .times .tilde { flex: 0 0 auto; padding-bottom: 12px; }
+
+  .shift-sub {
+    margin-top: 10px;
+    font-size: 15px;
+    color: var(--sub);
+  }
+
+  /* --- 結果 --- */
+  .result {
+    padding: 14px;
+    border-radius: 12px;
+    background: var(--ok-bg);
+    margin-bottom: 14px;
+  }
+
+  .result-label {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--sub);
+    margin: 0;
+  }
+
+  .result-amount {
+    font-size: 30px;
+    font-weight: 800;
+    line-height: 1.3;
+    margin: 4px 0 0;
+    letter-spacing: -0.01em;
+  }
+
+  .result-amount .yen { font-size: 20px; font-weight: 700; }
+  .result-note {
+    font-size: 14px;
+    color: var(--sub);
+    margin: 6px 0 0;
+  }
+
+  .wall {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 13px 14px;
+    margin-bottom: 12px;
+    background: var(--ok-bg);
+  }
+
+  .wall.near {
+    background: var(--warn-bg);
+    border-color: var(--warn-line);
+  }
+
+  .wall.over {
+    background: var(--over-bg);
+    border-color: var(--over-line);
+  }
+
+  .wall-name { font-size: 16px; font-weight: 700; margin: 0; }
+  .wall-amount { font-size: 14px; color: var(--sub); margin: 2px 0 0; }
+
+  .wall-diff {
+    font-size: 21px;
+    font-weight: 800;
+    margin: 8px 0 0;
+  }
+
+  .wall-msg {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 6px 0 0;
+  }
+
+  .wall.near .wall-msg { color: var(--warn-text); }
+  .wall.over .wall-msg { color: var(--over-text); }
+
+  .empty {
+    font-size: 16px;
+    color: var(--sub);
+    margin: 0;
+  }
+
+  .badge {
+    display: inline-block;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--ok-bg);
+    border: 1px solid var(--line);
+    color: var(--sub);
+  }
+
+  /* --- 注記 --- */
+  .notes {
+    border: 1px dashed var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    font-size: 15px;
+    color: var(--sub);
+    line-height: 1.8;
+  }
+
+  .notes h2 {
+    font-size: 16px;
+    color: var(--text);
+    border-bottom: none;
+    padding-bottom: 0;
+    margin-bottom: 8px;
+  }
+
+  .notes ul { margin: 0; padding-left: 1.3em; }
+  .notes li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>バイト想定給与シミュレーター</h1>
+  <p class="lead">
+    入力した勤務予定から、給与と年収の<strong>目安（想定）</strong>を計算します。<br>
+    このページは入力内容を保存しません。閉じると消えます。
+  </p>
+
+  <!-- ============ 基本情報 ============ -->
+  <section class="card">
+    <h2>基本情報</h2>
+
+    <div class="field">
+      <label for="employeeName">従業員名</label>
+      <input type="text" id="employeeName" placeholder="例：山田 太郎" autocomplete="off">
+    </div>
+
+    <div class="field">
+      <label for="hourlyWage">時給（円）</label>
+      <input type="number" id="hourlyWage" inputmode="numeric" min="0" step="1" placeholder="例：1100">
+    </div>
+
+    <div class="field">
+      <label for="age">年齢（歳）
+        <span class="hint">19〜22歳は適用される壁が変わるため入力してください</span>
+      </label>
+      <input type="number" id="age" inputmode="numeric" min="0" max="120" step="1" placeholder="例：20">
+    </div>
+
+    <div class="field">
+      <label for="otherIncome">他店での今年の収入見込み（円）
+        <span class="hint">任意入力。空欄のままでも計算できます</span>
+      </label>
+      <input type="number" id="otherIncome" inputmode="numeric" min="0" step="1" placeholder="空欄可">
+    </div>
+  </section>
+
+  <!-- ============ 勤務予定 ============ -->
+  <section class="card">
+    <h2>今月の勤務予定</h2>
+    <div id="shiftList"></div>
+    <button type="button" class="btn-add" id="addShift">＋ 勤務予定を追加</button>
+  </section>
+
+  <!-- ============ 結果 ============ -->
+  <section class="card">
+    <h2>計算結果（すべて想定）</h2>
+    <p class="result-note" id="nameLabel" style="margin-top:-6px;">対象者：未入力</p>
+
+    <div class="result">
+      <p class="result-label">1. 今月の想定給与</p>
+      <p class="result-amount" id="monthlyAmount"><span class="yen">¥</span>0</p>
+      <p class="result-note" id="monthlyDetail">勤務予定が未入力です</p>
+    </div>
+
+    <div class="result">
+      <p class="result-label">2. 年収見込み（想定・他店分を含む）</p>
+      <p class="result-amount" id="yearlyAmount"><span class="yen">¥</span>0</p>
+      <p class="result-note" id="yearlyDetail"></p>
+    </div>
+
+    <p class="result-label" style="margin-bottom:8px;">3. 壁までの残り金額（想定）</p>
+    <p class="result-note" id="wallSetLabel" style="margin-top:0;"></p>
+    <div id="wallList"></div>
+  </section>
+
+  <!-- ============ 注記 ============ -->
+  <section class="notes">
+    <h2>ご確認ください</h2>
+    <ul>
+      <li>この版では <strong>深夜割増・残業割増・休憩時間の控除・源泉徴収</strong> を計算していません。実際の支給額とは差が出ます。</li>
+      <li>表示している金額はすべて入力値から機械的に計算した<strong>想定</strong>の数値です。確定額ではありません。</li>
+      <li>年収見込みは「今月と同じ勤務ペースが12ヶ月続いた場合」という単純な仮定に基づく試算です。</li>
+      <li>壁の金額は制度改正で変わります。現在の設定値が最新かどうか、必ず公式情報でご確認ください。</li>
+      <li>扶養や社会保険の取り扱いは個々の事情で変わります。判断は勤務先・ご家族・専門窓口にご確認ください。</li>
+    </ul>
+  </section>
+
+</div>
+
+<script>
+/* =====================================================================
+   壁の設定 ―― 制度改正時はこのブロックだけを書き換えてください
+   ---------------------------------------------------------------------
+   ※※※ 要確認 ※※※
+   以下の金額はすべて【仮の値】です。運用前に必ず最新の制度で確認し、
+   正しい金額・名称に差し替えてください。
+   ===================================================================== */
+
+const WALL_SETTINGS = {
+
+  // 19〜22歳と判定する年齢の範囲（この範囲だと walls19to22 が使われます）
+  // ※※※ 要確認 ※※※ 判定の基準日（年末時点の年齢か等）は要確認
+  specialAgeMin: 19,
+  specialAgeMax: 22,
+
+  // 壁に「近づいている」と表示し始めるライン
+  // ※※※ 要確認 ※※※ 下記は仮の値。運用に合わせて調整してください
+  nearThresholdYen:  100000,  // 壁までの差額がこの金額以下になったら警告
+  nearThresholdRate: 0.9,     // または壁の90%に到達したら警告
+
+  // --- 一般（19〜22歳以外）に適用する壁 -----------------------------
+  // ※※※ 要確認 ※※※ 名称・金額ともに仮の値です
+  wallsGeneral: [
+    { name: '所得税の壁（仮）',           amount: 1030000 },
+    { name: '社会保険の壁・勤務先要件（仮）', amount: 1060000 },
+    { name: '社会保険の壁（仮）',           amount: 1300000 },
+  ],
+
+  // --- 19〜22歳に適用する壁 -----------------------------------------
+  // ※※※ 要確認 ※※※ 名称・金額ともに仮の値です
+  walls19to22: [
+    { name: '所得税の壁（仮）',           amount: 1030000 },
+    { name: '社会保険の壁・勤務先要件（仮）', amount: 1060000 },
+    { name: '社会保険の壁（仮）',           amount: 1300000 },
+    { name: '扶養の壁・19〜22歳（仮）',     amount: 1500000 },
+  ],
+};
+
+/* 年収見込みの計算に使う月数
+   ※※※ 要確認 ※※※ 「今月のペースが何ヶ月続く前提か」。仮に12ヶ月 */
+const MONTHS_PER_YEAR = 12;
+
+/* =====================================================================
+   ここから下は計算・表示のロジックです
+   ===================================================================== */
+
+const $ = (id) => document.getElementById(id);
+
+const shiftList   = $('shiftList');
+const addShiftBtn = $('addShift');
+
+let shiftSeq = 0;
+
+/* --- 勤務予定の行を1つ追加する --- */
+function addShiftRow() {
+  shiftSeq += 1;
+
+  const row = document.createElement('div');
+  row.className = 'shift';
+  row.innerHTML = `
+    <div class="shift-head">
+      <span class="shift-no"></span>
+      <button type="button" class="btn-del">削除</button>
+    </div>
+    <div class="field">
+      <label>日付</label>
+      <input type="date" class="in-date">
+    </div>
+    <div class="times">
+      <div>
+        <label>開始</label>
+        <input type="time" class="in-start">
+      </div>
+      <span class="tilde">〜</span>
+      <div>
+        <label>終了</label>
+        <input type="time" class="in-end">
+      </div>
+    </div>
+    <p class="shift-sub row-sub">時刻を入力すると勤務時間が表示されます</p>
+  `;
+
+  row.querySelector('.btn-del').addEventListener('click', () => {
+    row.remove();
+    if (!shiftList.querySelector('.shift')) addShiftRow();
+    renumberRows();
+    recalc();
+  });
+
+  row.querySelectorAll('input').forEach((el) => {
+    el.addEventListener('input', recalc);
+    el.addEventListener('change', recalc);
+  });
+
+  shiftList.appendChild(row);
+  renumberRows();
+  return row;
+}
+
+function renumberRows() {
+  shiftList.querySelectorAll('.shift').forEach((row, i) => {
+    row.querySelector('.shift-no').textContent = `勤務 ${i + 1}`;
+  });
+}
+
+/* --- "HH:MM" を分に直す。取れなければ null --- */
+function toMinutes(value) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value || '');
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/* --- 開始〜終了の勤務分数。終了が開始以前なら日跨ぎとして扱う --- */
+function workedMinutes(startStr, endStr) {
+  const s = toMinutes(startStr);
+  const e = toMinutes(endStr);
+  if (s === null || e === null) return null;
+  if (s === e) return 0;
+  return e > s ? e - s : (e + 24 * 60) - s;
+}
+
+function yen(n) {
+  return '¥' + Math.round(n).toLocaleString('ja-JP');
+}
+
+function amountHTML(n) {
+  return '<span class="yen">¥</span>' + Math.round(n).toLocaleString('ja-JP');
+}
+
+function hoursText(minutes) {
+  const h = minutes / 60;
+  return (Math.round(h * 100) / 100).toLocaleString('ja-JP') + '時間';
+}
+
+/* --- 入力を読み取って全体を再計算する --- */
+function recalc() {
+  const wage        = Math.max(0, Number($('hourlyWage').value) || 0);
+  const ageRaw      = $('age').value.trim();
+  const age         = ageRaw === '' ? null : Number(ageRaw);
+  const otherRaw    = $('otherIncome').value.trim();
+  const otherIncome = otherRaw === '' ? 0 : Math.max(0, Number(otherRaw) || 0);
+  const hasOther    = otherRaw !== '';
+
+  const name = $('employeeName').value.trim();
+  $('nameLabel').textContent = name ? `対象者：${name}` : '対象者：未入力';
+
+  // --- 1. 今月の想定給与 ---
+  let totalMinutes = 0;
+  let totalPay     = 0;
+  let filledRows   = 0;
+
+  shiftList.querySelectorAll('.shift').forEach((row) => {
+    const start = row.querySelector('.in-start').value;
+    const end   = row.querySelector('.in-end').value;
+    const sub   = row.querySelector('.row-sub');
+    const mins  = workedMinutes(start, end);
+
+    if (mins === null) {
+      sub.textContent = '時刻を入力すると勤務時間が表示されます';
+      return;
+    }
+
+    const pay = Math.floor((mins / 60) * wage);  // 行ごとに円未満を切り捨て
+    totalMinutes += mins;
+    totalPay     += pay;
+    filledRows   += 1;
+
+    const overnight = toMinutes(end) <= toMinutes(start) && mins > 0 ? '（日跨ぎ）' : '';
+    sub.textContent = `${hoursText(mins)}${overnight} ／ ${yen(pay)}（想定）`;
+  });
+
+  $('monthlyAmount').innerHTML = amountHTML(totalPay);
+
+  if (filledRows === 0) {
+    $('monthlyDetail').textContent = '勤務予定が未入力です';
+  } else if (wage <= 0) {
+    $('monthlyDetail').textContent =
+      `${filledRows}日 ／ 合計 ${hoursText(totalMinutes)}　※有効な時給が未入力です`;
+  } else {
+    $('monthlyDetail').textContent =
+      `${filledRows}日 ／ 合計 ${hoursText(totalMinutes)} ／ 時給 ${yen(wage)}（想定）`;
+  }
+
+  // --- 2. 年収見込み（他店分を含む） ---
+  const yearlyFromThisJob = totalPay * MONTHS_PER_YEAR;
+  const yearlyTotal       = yearlyFromThisJob + otherIncome;
+
+  $('yearlyAmount').innerHTML = amountHTML(yearlyTotal);
+  $('yearlyDetail').textContent =
+    `今月の想定給与 ${yen(totalPay)} × ${MONTHS_PER_YEAR}ヶ月＝${yen(yearlyFromThisJob)}（想定）` +
+    (hasOther
+      ? ` ＋ 他店 ${yen(otherIncome)}（想定）`
+      : ' ／ 他店分は未入力のため 0 円として計算');
+
+  // --- 3. 壁までの残り金額 ---
+  renderWalls(yearlyTotal, age);
+}
+
+/* --- 壁の一覧を描画する --- */
+function renderWalls(yearlyTotal, age) {
+  const isSpecialAge =
+    age !== null &&
+    Number.isFinite(age) &&
+    age >= WALL_SETTINGS.specialAgeMin &&
+    age <= WALL_SETTINGS.specialAgeMax;
+
+  const walls = isSpecialAge ? WALL_SETTINGS.walls19to22 : WALL_SETTINGS.wallsGeneral;
+
+  $('wallSetLabel').textContent =
+    age === null
+      ? `年齢が未入力のため、${WALL_SETTINGS.specialAgeMin}〜${WALL_SETTINGS.specialAgeMax}歳以外の壁で表示しています`
+      : isSpecialAge
+        ? `適用中：${WALL_SETTINGS.specialAgeMin}〜${WALL_SETTINGS.specialAgeMax}歳の壁`
+        : `適用中：${WALL_SETTINGS.specialAgeMin}〜${WALL_SETTINGS.specialAgeMax}歳以外の壁`;
+
+  const list = $('wallList');
+  list.innerHTML = '';
+
+  walls
+    .slice()
+    .sort((a, b) => a.amount - b.amount)
+    .forEach((wall) => {
+      const diff   = wall.amount - yearlyTotal;
+      const isOver = diff < 0;
+      const isNear =
+        !isOver &&
+        (diff <= WALL_SETTINGS.nearThresholdYen ||
+         yearlyTotal >= wall.amount * WALL_SETTINGS.nearThresholdRate);
+
+      const box = document.createElement('div');
+      box.className = 'wall' + (isOver ? ' over' : isNear ? ' near' : '');
+
+      const diffLine = isOver
+        ? `超過額（想定）：${yen(Math.abs(diff))}`
+        : `壁までの残り（想定）：${yen(diff)}`;
+
+      let message = '';
+      if (isOver) {
+        message = 'この壁を超える見込みです。詳細は確認してください。';
+      } else if (isNear) {
+        message = '壁に近づいています。詳細は確認してください。';
+      }
+
+      box.innerHTML = `
+        <p class="wall-name"></p>
+        <p class="wall-amount"></p>
+        <p class="wall-diff"></p>
+        ${message ? '<p class="wall-msg"></p>' : ''}
+      `;
+      box.querySelector('.wall-name').textContent   = wall.name;
+      box.querySelector('.wall-amount').textContent = `基準額：${yen(wall.amount)}`;
+      box.querySelector('.wall-diff').textContent   = diffLine;
+      if (message) box.querySelector('.wall-msg').textContent = message;
+
+      list.appendChild(box);
+    });
+
+  if (!walls.length) {
+    list.innerHTML = '<p class="empty">壁が設定されていません。ファイル冒頭の WALL_SETTINGS を確認してください。</p>';
+  }
+}
+
+/* --- 初期化 --- */
+addShiftBtn.addEventListener('click', () => {
+  const row = addShiftRow();
+  row.querySelector('.in-date').focus();
+  recalc();
+});
+
+['employeeName', 'hourlyWage', 'age', 'otherIncome'].forEach((id) => {
+  $(id).addEventListener('input', recalc);
+});
+
+addShiftRow();
+recalc();
+</script>
+</body>
+</html>
