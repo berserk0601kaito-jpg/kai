@@ -10,9 +10,9 @@
 
   ・ブラウザでこのファイルを開くだけで動きます。
   ・入力内容は画面上にだけ保持され、保存はしません（リロードで消えます）。
-  ・「壁」の金額と各種の判定基準は、ファイル末尾のスクリプト冒頭にある
-    WALL_SETTINGS / PAY_RULES にまとめてあります。制度改正時はそこだけ
-    書き換えてください。
+  ・「壁」の金額や各種の判定基準は、ファイル末尾のスクリプト冒頭にある
+    WALL_SETTINGS / SOCIAL_INSURANCE / PAY_RULES にまとめてあります。
+    制度改正時はそこだけ書き換えてください。
   =====================================================================
 -->
 <style>
@@ -67,7 +67,6 @@
   .wrap { max-width: 640px; margin: 0 auto; }
 
   h1 { font-size: 22px; margin: 0 0 4px; line-height: 1.4; }
-
   .lead { margin: 0 0 20px; font-size: 15px; color: var(--sub); }
 
   .card {
@@ -95,7 +94,7 @@
     margin-top: 2px;
   }
 
-  .field { margin-bottom: 18px; }
+  .field { margin-bottom: 20px; }
   .field:last-child { margin-bottom: 0; }
 
   input[type="text"],
@@ -180,9 +179,19 @@
   .shift-sub { margin-top: 10px; font-size: 15px; color: var(--sub); }
   .shift-sub b { color: var(--text); }
 
+  .shift-warn {
+    margin: 10px 0 0;
+    padding: 10px 12px;
+    font-size: 14px;
+    line-height: 1.7;
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-line);
+    border-radius: 10px;
+    color: var(--warn-text);
+  }
+
   /* --- 結果 --- */
   .result { padding: 14px; border-radius: 12px; background: var(--ok-bg); margin-bottom: 14px; }
-
   .result-label { font-size: 15px; font-weight: 700; color: var(--sub); margin: 0; }
 
   .result-amount {
@@ -195,6 +204,17 @@
 
   .result-amount .yen { font-size: 20px; font-weight: 700; }
   .result-note { font-size: 14px; color: var(--sub); margin: 6px 0 0; }
+
+  .rows { margin: 10px 0 0; font-size: 15px; }
+  .rows div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 0;
+    border-top: 1px solid var(--line);
+  }
+  .rows div:first-child { border-top: none; }
+  .rows span:last-child { font-weight: 700; white-space: nowrap; }
 
   .wall {
     border: 1px solid var(--line);
@@ -224,6 +244,21 @@
     border-top: 1px dashed var(--line);
     color: var(--sub);
   }
+
+  .si {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 13px 14px;
+    margin-top: 16px;
+    background: var(--ok-bg);
+    font-size: 15px;
+    line-height: 1.75;
+  }
+
+  .si.alert { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn-text); }
+  .si h3 { font-size: 16px; margin: 0 0 6px; }
+  .si p { margin: 0 0 6px; }
+  .si p:last-child { margin-bottom: 0; }
 
   .empty { font-size: 16px; color: var(--sub); margin: 0; }
 
@@ -255,12 +290,7 @@
     margin-bottom: 8px;
   }
 
-  .notes h3 {
-    font-size: 15px;
-    color: var(--text);
-    margin: 16px 0 4px;
-  }
-
+  .notes h3 { font-size: 15px; color: var(--text); margin: 16px 0 4px; }
   .notes ul { margin: 0; padding-left: 1.3em; }
   .notes li { margin-bottom: 6px; }
 </style>
@@ -270,8 +300,8 @@
 
   <h1>バイト想定給与シミュレーター</h1>
   <p class="lead">
-    勤務予定から、給与と年収の<strong>目安（想定）</strong>を計算します。<br>
-    このページは入力内容を保存しません。閉じると消えます。
+    勤務予定から、給与と年収の<strong>目安（想定）</strong>を確認します。<br>
+    確定額ではありません。このページは入力内容を保存しません。
   </p>
 
   <!-- ============ 基本情報 ============ -->
@@ -290,7 +320,7 @@
 
     <div class="field">
       <label for="age">年齢（歳）
-        <span class="hint">その年の12月31日時点の年齢。19〜22歳は適用される壁が変わります</span>
+        <span class="hint">その年の12月31日時点の年齢。19〜22歳は表示される壁が変わります</span>
       </label>
       <input type="number" id="age" inputmode="numeric" min="0" max="120" step="1" placeholder="例：20">
     </div>
@@ -299,16 +329,40 @@
       <div class="check">
         <input type="checkbox" id="isStudent">
         <label for="isStudent">昼間学生である
-          <span class="hint">通信制・夜間・定時制は含みません。社会保険の加入要件の判定に使います</span>
+          <span class="hint">夜間・通信制・定時制はチェックを外してください（「学生でない」扱いになります）</span>
         </label>
       </div>
     </div>
 
     <div class="field">
+      <label for="weeklyHours">週の所定労働時間（時間）
+        <span class="hint">社会保険の加入要件の判定に使います</span>
+      </label>
+      <input type="number" id="weeklyHours" inputmode="decimal" min="0" max="168" step="0.5" placeholder="例：20">
+    </div>
+  </section>
+
+  <!-- ============ 金額情報 ============ -->
+  <section class="card">
+    <h2>金額情報</h2>
+
+    <div class="field">
       <label for="ytdIncome">今年ここまでの累計収入実績（円）
-        <span class="hint">この勤務先での、先月分までの合計。今月分は下の勤務予定から計算します</span>
+        <span class="hint">給与明細などから、先月分までの合計。通勤手当は含めないでください</span>
       </label>
       <input type="number" id="ytdIncome" inputmode="numeric" min="0" step="1" placeholder="例：480000">
+    </div>
+
+    <div class="field">
+      <label for="ytdCommute">今年ここまでの通勤手当の累計（円）
+        <span class="hint">先月分までの合計。社会保険の130万円の判定に使います</span>
+      </label>
+      <input type="number" id="ytdCommute" inputmode="numeric" min="0" step="1" placeholder="例：24000">
+    </div>
+
+    <div class="field">
+      <label for="commutePerShift">1回の勤務あたりの通勤手当（円・往復）</label>
+      <input type="number" id="commutePerShift" inputmode="numeric" min="0" step="1" placeholder="例：600">
     </div>
 
     <div class="field">
@@ -322,6 +376,10 @@
   <!-- ============ 勤務予定 ============ -->
   <section class="card">
     <h2>今月の勤務予定</h2>
+    <p class="defn" style="margin-bottom:14px;">
+      休憩時間は拘束時間から自動で入りますが、実際と違えば直してください。
+      一度直した行は自動で書き換わりません。
+    </p>
     <div id="shiftList"></div>
     <button type="button" class="btn-add" id="addShift">＋ 勤務予定を追加</button>
   </section>
@@ -332,26 +390,35 @@
     <p class="result-note" id="nameLabel" style="margin-top:-6px;">対象者：未入力</p>
 
     <div class="result">
-      <p class="result-label">1. 今月の想定給与</p>
+      <p class="result-label">1. 今月の想定給与（通勤手当を含む）</p>
       <p class="result-amount" id="monthlyAmount"><span class="yen">¥</span>0</p>
+      <div class="rows" id="monthlyRows"></div>
       <p class="result-note" id="monthlyDetail">勤務予定が未入力です</p>
-      <p class="result-note" id="monthlyBreakdown"></p>
     </div>
 
     <div class="result">
-      <p class="result-label">2. 年収見込み（想定・他店分を含む）</p>
-      <p class="result-amount" id="yearlyAmount"><span class="yen">¥</span>0</p>
-      <p class="result-note" id="yearlyDetail"></p>
+      <p class="result-label">2. 税務上の年収見込み（想定・通勤手当を含まない）</p>
+      <p class="result-amount" id="taxYearAmount"><span class="yen">¥</span>0</p>
+      <p class="result-note" id="taxYearDetail"></p>
     </div>
 
-    <p class="result-label" style="margin-bottom:8px;">3. 各壁までの残りと到達時期</p>
+    <div class="result">
+      <p class="result-label">3. 社保上の年収見込み（想定・通勤手当を含む）</p>
+      <p class="result-amount" id="socialYearAmount"><span class="yen">¥</span>0</p>
+      <p class="result-note" id="socialYearDetail"></p>
+    </div>
+
+    <p class="result-label" style="margin-bottom:8px;">4. 各壁までの残りと到達時期</p>
     <p class="defn">
       <strong>壁までの残り</strong>＝壁の金額 − 年収見込み（年末時点でどれだけ余るか）<br>
-      <strong>到達時期</strong>＝（壁の金額 − 累計実績 − 他店分）÷ 今月の想定給与<br>
-      今月と同じペースで働き続けた場合の目安です。
+      <strong>到達時期</strong>＝（壁の金額 − 現時点までの確定分）÷ 今月のペース<br>
+      130万円の壁だけは通勤手当を含む<strong>社保上の年収</strong>で、
+      他の壁は<strong>税務上の年収</strong>で判定しています。
     </p>
     <p class="result-note" id="wallSetLabel" style="margin:0 0 10px;"></p>
     <div id="wallList"></div>
+
+    <div class="si" id="siBox"></div>
   </section>
 
   <!-- ============ 注記 ============ -->
@@ -360,25 +427,25 @@
 
     <h3>この版で計算していないもの</h3>
     <ul>
-      <li><strong>残業割増</strong>（1日8時間・週40時間を超えた分の25%増）は計算していません。</li>
+      <li><strong>残業割増</strong>（1日8時間・週40時間を超えた分）は計算していません。該当する勤務がある行には注意を表示しています。</li>
       <li><strong>源泉徴収</strong>は計算していません。表示は額面の想定で、手取りではありません。</li>
-      <li><strong>賞与・寸志</strong>は計算に含まれません。支給がある場合は年収見込みが低めに出ます。</li>
-      <li><strong>交通費</strong>は含めていません。税金の計算では原則非課税ですが、<strong>社会保険の130万円の判定には含まれます</strong>。税と社会保険で数え方が違う点にご注意ください。</li>
+      <li><strong>賞与・寸志</strong>と<strong>有給休暇の取得分</strong>は計算に含まれていません。</li>
     </ul>
 
     <h3>計算の前提</h3>
     <ul>
-      <li><strong>休憩</strong>は、開始から終了までの拘束時間が6時間を超える場合45分、8時間を超える場合60分を自動で差し引いています。実際の休憩時間と異なる場合があります。</li>
-      <li><strong>深夜割増</strong>は22時〜5時の勤務を25%増で計算しています。休憩の時刻は入力しないため、休憩は深夜帯と通常帯へ拘束時間の比率で按分して差し引いています。</li>
-      <li>年収見込みは「今月と同じ勤務ペースが年末まで続いた場合」という仮定に基づく試算です。</li>
+      <li><strong>実際の打刻とシフト予定のずれは反映されません。</strong>早上がりや残って対応した分は、この画面の数字には入りません。</li>
+      <li><strong>通勤手当は税と社会保険で扱いが違います。</strong>所得税では原則非課税ですが、社会保険の130万円の判定には含まれます。そのため年収見込みを2種類に分けて表示しています。</li>
       <li><strong>130万円の壁だけは暦年（1〜12月）で判定されません。</strong>「今後1年間の収入見込み」で判定されるため、同じ画面に並んでいる他の壁とは基準となる期間が異なります。</li>
+      <li>深夜割増は22時〜翌5時の労働を25%増で計算しています。休憩は労働時間ではないため割増の対象外で、休憩の時刻を入力しないぶん、深夜帯と通常帯へ拘束時間の比率で按分して差し引いています。</li>
+      <li>年収見込みは「今月と同じ勤務ペースが年末まで続いた場合」という仮定に基づく試算です。</li>
     </ul>
 
     <h3>壁について</h3>
     <ul>
-      <li><strong>壁を超えることは、そのまま「損」を意味しません。</strong>収入が増えるにつれて控除が段階的に小さくなる仕組みになっており、超えた瞬間に手取りが大きく落ち込む「崖」ではありません。各壁には「超えると何が変わるか」を表示しています。</li>
+      <li><strong>壁を超えることは、そのまま「損」を意味しません。</strong>とくに19〜22歳は159万円を超えても197万円まで控除が段階的に減るだけで、超えた瞬間に落ち込む「崖」ではありません。各壁には「超えると何が変わるか」を表示しています。</li>
       <li>表示している金額はすべて入力値から機械的に計算した<strong>想定</strong>の数値です。確定額ではありません。</li>
-      <li>壁の金額は制度改正で変わります。現在の設定値が最新かどうか、必ず公式情報でご確認ください。</li>
+      <li><strong>制度は毎年改正されます。</strong>設定されている壁の金額や要件が最新かどうか、必ず公式情報で確認してください。</li>
       <li>扶養や社会保険の取り扱いは個々の事情で変わります。判断は勤務先・ご家族・専門窓口にご確認ください。</li>
     </ul>
   </section>
@@ -387,23 +454,29 @@
 
 <script>
 /* =====================================================================
-   壁の設定 ―― 制度改正時はこのブロックだけを書き換えてください
+   年収の壁の設定 ―― 制度改正時はこのブロックを書き換えてください
    ---------------------------------------------------------------------
-   ⚠️ 2026年8月時点の値です。壁は毎年動くため要定期確認。
-   出典: 国税庁 No.1177 / 令和8年度税制改正
+   ⚠️ 2026年8月時点の値です。制度は毎年改正されるため要定期確認。
 
    各壁のフィールド
-     name         画面に表示する名称
-     amount       壁の金額（円）
-     effect       この壁を超えると何が変わるかの説明。
-                  「損」という表現は使わず、実際に何が起きるかを書くこと。
-     skipIf19to22 true にすると、19〜22歳のときはこの壁を表示しない
-     skipIfStudent true にすると、昼間学生のときはこの壁を表示しない
+     amount  壁の金額（円）
+     basis   判定に使う年収。'tax'（通勤手当を含まない）または
+             'social'（通勤手当を含む）
+     ages    'all' … 全年齢に表示
+             '19to22' … 19〜22歳のときだけ表示
+             'other'  … 19〜22歳以外のときだけ表示
+     name    画面に表示する名称
+     effect  超えると何が変わるかの説明。
+             「損」という表現は使わず、実際に何が起きるかを事実として書くこと。
+
+   136万円は金額が同じでも意味が年齢で変わるため、2エントリに分けている。
+   19〜22歳は特定親族特別控除が受け止めるので控除額そのものは減らない。
    ===================================================================== */
 
 const WALL_SETTINGS = {
 
-  // 19〜22歳と判定する年齢の範囲。判定はその年の12月31日時点の年齢。
+  // 19〜22歳と判定する年齢の範囲。その年の12月31日時点で判定する。
+  // 学生である必要はなく、年齢要件のみ。
   specialAgeMin: 19,
   specialAgeMax: 22,
 
@@ -412,87 +485,108 @@ const WALL_SETTINGS = {
   //   壁の大きさが違うと金額基準は一貫しないため。
   warnMonths: 3,
 
-  // --- 全年齢に共通で適用する壁 -------------------------------------
-  // skipIf19to22 が付いた行だけが、19〜22歳のとき walls19to22 に置き換わる。
-  wallsGeneral: [
+  walls: [
     {
-      name: '親の扶養控除（〜136万）',
-      amount: 1360000,
-      skipIf19to22: true,   // 19〜22歳は 159万 / 197万 の枠で判定するため除外
-      effect: 'これを超えると、親（扶養している人）が受けられる扶養控除がなくなり、'
-            + '親の税負担が増えます。本人の手取りが減るわけではありません。'
-            + '世帯全体でどうなるかは、家族と確認してください。',
-    },
-    {
-      name: '社会保険の扶養（130万）',
       amount: 1300000,
-      // 学生にも適用される。学生にとっては実質唯一の社会保険の壁。
-      effect: 'これを超えると、親の健康保険の扶養から外れ、自分で健康保険と年金に'
-            + '加入することになります。保険料の負担が発生する一方、'
-            + '将来受け取る年金は増えます。'
-            + 'なおこの壁は暦年ではなく「今後1年間の収入見込み」で判定されます。',
+      basis: 'social',          // 通勤手当を含む社保上の年収で判定する
+      ages: 'all',
+      name: '社会保険の被扶養者から外れる（130万）',
+      effect: '親の健康保険の扶養から外れ、自分で健康保険と年金に加入することに'
+            + 'なります。保険料の負担が発生する一方、将来受け取る年金は増えます。'
+            + 'この壁は暦年ではなく「今後1年間の収入見込み」で判定され、'
+            + '判定には通勤手当も含まれます。',
     },
     {
-      name: '所得税がかかり始める（178万）',
-      amount: 1780000,
-      // 内訳: 基礎控除104万（本則62万＋特例42万）＋給与所得控除74万。
-      //       特例部分は2026・2027年の時限措置。
-      effect: 'これを超えた分に所得税がかかり始めます。かかるのは超えた部分に対してで、'
-            + '収入全体に一気にかかるわけではありません。',
+      amount: 1360000,
+      basis: 'tax',
+      ages: '19to22',
+      name: '扶養親族から外れる（136万）',
+      effect: '扶養親族の区分から外れます。'
+            + '19〜22歳は特定親族特別控除が受け止めるため、'
+            + '親の控除額そのものはここでは減りません。'
+            + '変わるのは「扶養親族かどうか」の区分で、'
+            + 'ひとり親控除の判定や、勤務先から親に支給される家族手当に'
+            + '影響することがあります。',
     },
-
-    // --- 参考: 106万の壁 ------------------------------------------------
-    // 賃金要件（月8.8万円）は2026年10月に廃止。以降は週20時間が主基準。
-    // 企業規模要件は2027〜2035年に段階的撤廃。
-    // 金額の壁として再び表示したくなった場合は、次の行のコメントを外す。
-    // {
-    //   name: '社会保険の加入要件（106万）',
-    //   amount: 1060000,
-    //   skipIfStudent: true,   // 昼間学生は加入要件の対象外
-    //   effect: '勤務先の社会保険に加入することになります。',
-    // },
-
-    // --- 未検証: 住民税 --------------------------------------------------
-    // 自治体によって金額が異なるため未設定。確認後に amount を入れること。
-    // { name: '住民税（要確認）', amount: null, effect: '' },
-  ],
-
-  // --- 19〜22歳のときに追加で適用する壁 -------------------------------
-  // 控除63万が満額なのは給与収入159万まで（改正前は150万）。
-  // 学生である必要はなく、年齢要件のみで判定される。
-  walls19to22: [
     {
-      name: '親の控除が満額（〜159万）',
+      amount: 1360000,
+      basis: 'tax',
+      ages: 'other',
+      name: '扶養控除の対象から外れる（136万）',
+      effect: '親が受けられる扶養控除の対象から外れ、親の税負担が増えます。'
+            + '本人の手取りが減るわけではありません。'
+            + '世帯全体でどうなるかは家族と確認してください。',
+    },
+    {
       amount: 1590000,
-      effect: 'これを超えると、親が受けられる控除が満額（63万円）ではなくなり、'
-            + '収入が増えるにつれて段階的に小さくなっていきます。'
+      basis: 'tax',
+      ages: '19to22',
+      name: '親の控除が満額（〜159万）',
+      effect: 'ここまでは親の控除が満額の63万円です。'
+            + 'これを超えると満額ではなくなり、収入が増えるにつれて'
+            + '段階的に小さくなっていきます。'
             + 'ここで急に大きく減るわけではありません。',
     },
     {
-      name: '親の控除がゼロに（197万）',
+      amount: 1780000,
+      basis: 'tax',
+      ages: 'all',
+      name: '所得税がかかり始める（178万）',
+      effect: '本人に所得税がかかり始めます。かかるのは超えた部分に対してで、'
+            + '収入全体に一気にかかるわけではありません。',
+    },
+    {
       amount: 1970000,
-      effect: '159万から少しずつ小さくなってきた親の控除が、ここでゼロになります。'
+      basis: 'tax',
+      ages: '19to22',
+      name: '親の控除がゼロに（197万）',
+      effect: '159万円から少しずつ小さくなってきた親の控除が、ここでゼロになります。'
             + 'この地点で急に落ちるのではなく、段階的に減ってきた先の到達点です。',
     },
+
+    // --- 106万円について -------------------------------------------------
+    // 賃金要件（月8.8万円）は2026年10月に廃止され、金額としての意味が
+    // なくなったため、金額の壁としては表示しない。
+    // 代わりに下の SOCIAL_INSURANCE で、週の所定労働時間から判定している。
   ],
 };
 
 /* =====================================================================
-   給与計算のルール ―― 割増率や休憩時間を変える場合はここ
+   社会保険の加入要件 ―― 金額ではなく週の所定労働時間で判定する
+   ---------------------------------------------------------------------
+   ⚠️ 企業規模要件は2027〜2035年に段階的撤廃の予定。要定期確認。
+   ===================================================================== */
+
+const SOCIAL_INSURANCE = {
+  // 週20時間以上で加入対象になりうる。ただし昼間学生は対象外（特例）。
+  weeklyHoursShortTime: 20,
+
+  // 週30時間以上（いわゆる4分の3基準）。
+  // 昼間学生の除外は週20時間の特例の話であり、こちらには適用されない。
+  weeklyHoursThreeQuarters: 30,
+};
+
+/* =====================================================================
+   給与計算のルール
    ===================================================================== */
 
 const PAY_RULES = {
-  // 深夜割増。22時〜5時の勤務に適用する。
+  // 深夜割増（労基法37条4項）。22時〜翌5時の労働に適用する。
   nightStartHour: 22,
   nightEndHour: 5,
-  nightRate: 1.25,
+  nightExtraRate: 0.25,        // 基本給に上乗せする割増分
 
-  // 休憩の自動控除。拘束時間（終了−開始）が overHours を超えたら
-  // breakMinutes を差し引く。上から順に判定し、最初に当たったものを使う。
-  breakRules: [
+  // 休憩時間の初期値。拘束時間が overHours を超えたら breakMinutes を入れる。
+  // 上から順に判定し、最初に当たったものを使う。自動控除ではなく、
+  // あくまで入力欄の初期値であり、ユーザーが編集できる。
+  breakDefaults: [
     { overHours: 8, breakMinutes: 60 },
     { overHours: 6, breakMinutes: 45 },
   ],
+
+  // 残業割増は計算しないが、この基準を超える勤務には注意を表示する。
+  overtimeDailyHours: 8,
+  overtimeWeeklyHours: 40,
 };
 
 /* =====================================================================
@@ -505,11 +599,14 @@ const shiftList   = $('shiftList');
 const addShiftBtn = $('addShift');
 
 /* --- 今月と、今月を含む年内の残り月数 --- */
-const TODAY          = new Date();
-const CURRENT_MONTH  = TODAY.getMonth() + 1;          // 1〜12
-const MONTHS_LEFT    = 12 - CURRENT_MONTH + 1;        // 今月を含む
+const TODAY         = new Date();
+const CURRENT_MONTH = TODAY.getMonth() + 1;        // 1〜12
+const MONTHS_LEFT   = 12 - CURRENT_MONTH + 1;      // 今月を含む
 
-/* --- 勤務予定の行を1つ追加する --- */
+/* ------------------------------------------------------------------
+   勤務予定の行
+   ------------------------------------------------------------------ */
+
 function addShiftRow() {
   const row = document.createElement('div');
   row.className = 'shift';
@@ -533,8 +630,15 @@ function addShiftRow() {
         <input type="time" class="in-end">
       </div>
     </div>
+    <div class="field" style="margin-top:14px;">
+      <label>休憩時間（分）</label>
+      <input type="number" class="in-break" inputmode="numeric" min="0" step="1" value="0">
+    </div>
     <p class="shift-sub row-sub">時刻を入力すると勤務時間と想定額が表示されます</p>
   `;
+
+  // この行の休憩をユーザーが編集したか。編集後は自動更新しない。
+  row.dataset.breakEdited = '';
 
   row.querySelector('.btn-del').addEventListener('click', () => {
     row.remove();
@@ -543,7 +647,14 @@ function addShiftRow() {
     recalc();
   });
 
-  row.querySelectorAll('input').forEach((el) => {
+  // 休憩欄を手で触ったらフラグを立てる。
+  // プログラムから value を代入しても input は発火しないので誤検知しない。
+  row.querySelector('.in-break').addEventListener('input', () => {
+    row.dataset.breakEdited = '1';
+    recalc();
+  });
+
+  row.querySelectorAll('.in-date, .in-start, .in-end').forEach((el) => {
     el.addEventListener('input', recalc);
     el.addEventListener('change', recalc);
   });
@@ -559,7 +670,11 @@ function renumberRows() {
   });
 }
 
-/* --- "HH:MM" を分に直す。取れなければ null --- */
+/* ------------------------------------------------------------------
+   時刻・時間の計算
+   ------------------------------------------------------------------ */
+
+/* "HH:MM" を分に直す。取れなければ null */
 function toMinutes(value) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(value || '');
   if (!m) return null;
@@ -569,65 +684,46 @@ function toMinutes(value) {
   return h * 60 + min;
 }
 
-/* --- [aStart,aEnd] と [bStart,bEnd] の重なりの分数 --- */
+/* 2つの区間の重なりの分数 */
 function overlapMinutes(aStart, aEnd, bStart, bEnd) {
   return Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
 }
 
-/* --- 勤務区間 [start,end] のうち深夜帯（22時〜5時）にかかる分数 ---
+/* 勤務区間 [start,end] のうち深夜帯（22時〜翌5時）にかかる分数。
    日跨ぎに対応するため、深夜帯を前日・当日・翌日の3区間に展開して合算する。 */
 function nightMinutes(start, end) {
-  const ns = PAY_RULES.nightStartHour * 60;   // 1320
-  const ne = PAY_RULES.nightEndHour * 60;     // 300
+  const ns = PAY_RULES.nightStartHour * 60;
+  const ne = PAY_RULES.nightEndHour * 60;
   const bands = [
-    [ns - 1440, ne],           // 前日22時 〜 当日5時
-    [ns,        ne + 1440],    // 当日22時 〜 翌日5時
-    [ns + 1440, ne + 2880],    // 翌日22時 〜 翌々日5時
+    [ns - 1440, ne],
+    [ns,        ne + 1440],
+    [ns + 1440, ne + 2880],
   ];
   return bands.reduce((sum, [bs, be]) => sum + overlapMinutes(start, end, bs, be), 0);
 }
 
-/* --- 拘束時間に応じて自動控除する休憩の分数 --- */
-function breakMinutesFor(totalMinutes) {
-  for (const rule of PAY_RULES.breakRules) {
+/* 拘束時間に対する休憩時間の初期値 */
+function defaultBreakFor(totalMinutes) {
+  for (const rule of PAY_RULES.breakDefaults) {
     if (totalMinutes > rule.overHours * 60) return rule.breakMinutes;
   }
   return 0;
 }
 
-/* --- 1行分の勤務を計算する。時刻が揃っていなければ null --- */
-function calcShift(startStr, endStr, wage) {
-  const s  = toMinutes(startStr);
-  const e0 = toMinutes(endStr);
-  if (s === null || e0 === null) return null;
-
-  const crossesMidnight = e0 < s;
-  const e = crossesMidnight ? e0 + 1440 : e0;
-  const total = e - s;                        // 拘束時間（分）
-
-  if (total === 0) {
-    return { total: 0, brk: 0, work: 0, normalWork: 0, nightWork: 0, pay: 0, crossesMidnight: false };
-  }
-
-  const night = nightMinutes(s, e);           // 拘束時間のうち深夜帯にかかる分
-  const brk   = breakMinutesFor(total);
-  const work  = Math.max(0, total - brk);     // 実労働時間（分）
-
-  // 休憩の時刻を入力しないため、休憩は深夜帯と通常帯へ拘束時間の比率で按分する。
-  // ここを「通常帯から先に差し引く」に変えたい場合は、この2行を差し替える。
-  const ratio      = work / total;
-  const nightWork  = night * ratio;
-  const normalWork = (total - night) * ratio;
-
-  const pay = Math.floor(
-    (normalWork / 60) * wage +
-    (nightWork  / 60) * wage * PAY_RULES.nightRate
-  );
-
-  return { total, brk, work, normalWork, nightWork, pay, crossesMidnight };
+/* "YYYY-MM-DD" から、その日を含む週（月曜始まり）のキーを作る */
+function weekKeyOf(dateStr) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || '');
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (Number.isNaN(d.getTime())) return null;
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));   // 月曜へ戻す
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }
 
-/* --- 表示用のヘルパー --- */
+/* ------------------------------------------------------------------
+   表示用のヘルパー
+   ------------------------------------------------------------------ */
+
 function yen(n) {
   return '¥' + Math.round(n).toLocaleString('ja-JP');
 }
@@ -640,6 +736,7 @@ function hoursText(minutes) {
   return (Math.round((minutes / 60) * 100) / 100).toLocaleString('ja-JP') + '時間';
 }
 
+/* 入力欄を数値として読む。空欄・負値・不正値は0として扱う */
 function numberValue(id) {
   const raw = $(id).value.trim();
   if (raw === '') return { filled: false, value: 0 };
@@ -647,129 +744,216 @@ function numberValue(id) {
   return { filled: true, value: Number.isFinite(n) && n > 0 ? n : 0 };
 }
 
-/* --- 入力を読み取って全体を再計算する --- */
+/* ------------------------------------------------------------------
+   本体
+   ------------------------------------------------------------------ */
+
 function recalc() {
-  const wage      = numberValue('hourlyWage').value;
-  const ageRaw    = $('age').value.trim();
-  const age       = ageRaw === '' ? null : Number(ageRaw);
-  const isStudent = $('isStudent').checked;
-  const ytd       = numberValue('ytdIncome');
-  const other     = numberValue('otherIncome');
+  const wage        = numberValue('hourlyWage').value;
+  const ageRaw      = $('age').value.trim();
+  const age         = ageRaw === '' ? null : Number(ageRaw);
+  const isStudent   = $('isStudent').checked;
+  const weeklyHours = numberValue('weeklyHours');
+  const ytdIncome   = numberValue('ytdIncome');
+  const ytdCommute  = numberValue('ytdCommute');
+  const commuteEach = numberValue('commutePerShift');
+  const other       = numberValue('otherIncome');
 
   const name = $('employeeName').value.trim();
   $('nameLabel').textContent = name ? `対象者：${name}` : '対象者：未入力';
 
-  // --- 1. 今月の想定給与 ---
-  let totalHold   = 0;   // 拘束時間
-  let totalBreak  = 0;   // 控除した休憩
-  let totalNight  = 0;   // 深夜帯の実労働
-  let totalWork   = 0;   // 実労働
-  let monthlyPay  = 0;
-  let filledRows  = 0;
-
+  // --- 各行を計算する ---
+  const rows = [];
   shiftList.querySelectorAll('.shift').forEach((row) => {
-    const sub = row.querySelector('.row-sub');
-    const r = calcShift(row.querySelector('.in-start').value,
-                        row.querySelector('.in-end').value,
-                        wage);
+    const s  = toMinutes(row.querySelector('.in-start').value);
+    const e0 = toMinutes(row.querySelector('.in-end').value);
+    const breakInput = row.querySelector('.in-break');
 
-    if (r === null) {
-      sub.textContent = '時刻を入力すると勤務時間と想定額が表示されます';
+    if (s === null || e0 === null) {
+      row.querySelector('.row-sub').textContent =
+        '時刻を入力すると勤務時間と想定額が表示されます';
+      const warn = row.querySelector('.shift-warn');
+      if (warn) warn.remove();
       return;
     }
 
-    totalHold  += r.total;
-    totalBreak += r.brk;
-    totalNight += r.nightWork;
-    totalWork  += r.work;
-    monthlyPay += r.pay;
-    filledRows += 1;
+    const crossesMidnight = e0 < s;
+    const end   = crossesMidnight ? e0 + 1440 : e0;
+    const total = end - s;                                  // 拘束時間（分）
 
+    // 休憩の初期値。ユーザーが編集済みの行は書き換えない。
+    if (row.dataset.breakEdited !== '1') {
+      breakInput.value = String(defaultBreakFor(total));
+    }
+
+    const rawBreak = Number(breakInput.value);
+    const brk  = Math.min(Math.max(0, Number.isFinite(rawBreak) ? rawBreak : 0), total);
+    const work = total - brk;                               // 実労働時間（分）
+
+    // 休憩の時刻は入力しないため、深夜帯と通常帯へ拘束時間の比率で按分する。
+    const night     = nightMinutes(s, end);
+    const ratio     = total > 0 ? work / total : 0;
+    const nightWork = night * ratio;
+
+    // 円未満は1日ごとに切り捨てる。内訳の合計が総額と一致するよう、
+    // 基本給と深夜割増をそれぞれ切り捨てている。
+    const basePay  = Math.floor((work / 60) * wage);
+    const nightPay = Math.floor((nightWork / 60) * wage * PAY_RULES.nightExtraRate);
+
+    rows.push({
+      el: row, total, brk, work, nightWork, basePay, nightPay, crossesMidnight,
+      weekKey: weekKeyOf(row.querySelector('.in-date').value),
+    });
+  });
+
+  // --- 週ごとの実労働時間を集計する（日付が入っている行のみ） ---
+  const weekTotals = {};
+  rows.forEach((r) => {
+    if (!r.weekKey) return;
+    weekTotals[r.weekKey] = (weekTotals[r.weekKey] || 0) + r.work;
+  });
+
+  // --- 行ごとの表示と、残業に関する注意 ---
+  rows.forEach((r) => {
     const parts = [`実働 ${hoursText(r.work)}`];
-    if (r.brk > 0)       parts.push(`休憩 -${r.brk}分`);
+    if (r.brk > 0)       parts.push(`拘束 ${hoursText(r.total)} − 休憩 ${r.brk}分`);
     if (r.nightWork > 0) parts.push(`うち深夜 ${hoursText(r.nightWork)}`);
     if (r.crossesMidnight) parts.push('日跨ぎ');
-    sub.innerHTML = '';
-    sub.append(parts.join(' ／ ') + ' ／ ');
+
+    const sub = r.el.querySelector('.row-sub');
+    sub.textContent = parts.join(' ／ ') + ' ／ ';
     const b = document.createElement('b');
-    b.textContent = `${yen(r.pay)}（想定）`;
-    sub.append(b);
+    b.textContent = `${yen(r.basePay + r.nightPay)}（想定）`;
+    sub.appendChild(b);
+
+    const overDaily  = r.work > PAY_RULES.overtimeDailyHours * 60;
+    const weekTotal  = r.weekKey ? weekTotals[r.weekKey] : 0;
+    const overWeekly = weekTotal > PAY_RULES.overtimeWeeklyHours * 60;
+
+    const existing = r.el.querySelector('.shift-warn');
+    if (existing) existing.remove();
+
+    if (overDaily || overWeekly) {
+      const msgs = [];
+      if (overDaily) {
+        msgs.push(`1日の実労働が${PAY_RULES.overtimeDailyHours}時間を超えています。`);
+      }
+      if (overWeekly) {
+        msgs.push(`この週の実労働の合計が${hoursText(weekTotal)}で、`
+                + `${PAY_RULES.overtimeWeeklyHours}時間を超えています。`);
+      }
+      msgs.push('残業割増を計算していないため、実際の支給額はこれより多くなる可能性があります。');
+      if (overDaily && r.nightWork > 0) {
+        msgs.push('深夜と重なる部分は割増が重なり、50%増になる可能性があります。');
+      }
+      const p = document.createElement('p');
+      p.className = 'shift-warn';
+      p.textContent = msgs.join('');
+      r.el.appendChild(p);
+    }
   });
 
-  $('monthlyAmount').innerHTML = amountHTML(monthlyPay);
+  // --- 1. 今月の想定給与 ---
+  const shiftCount   = rows.length;
+  const baseTotal    = rows.reduce((s, r) => s + r.basePay, 0);
+  const nightTotal   = rows.reduce((s, r) => s + r.nightPay, 0);
+  const commuteMonth = commuteEach.value * shiftCount;
+  const wageMonth    = baseTotal + nightTotal;            // 賃金（通勤手当を含まない）
+  const payoutMonth  = wageMonth + commuteMonth;          // 支給額の想定
 
-  if (filledRows === 0) {
-    $('monthlyDetail').textContent = '勤務予定が未入力です';
-    $('monthlyBreakdown').textContent = '';
-  } else {
-    $('monthlyDetail').textContent =
-      `${filledRows}日 ／ 拘束 ${hoursText(totalHold)} − 休憩 ${hoursText(totalBreak)} ＝ ` +
-      `実働 ${hoursText(totalWork)}` +
-      (wage > 0 ? ` ／ 時給 ${yen(wage)}` : '　※有効な時給が未入力です');
-    $('monthlyBreakdown').textContent = totalNight > 0
-      ? `うち深夜帯（${PAY_RULES.nightStartHour}時〜${PAY_RULES.nightEndHour}時）` +
-        `${hoursText(totalNight)}を${Math.round((PAY_RULES.nightRate - 1) * 100)}%増で計算（想定）`
-      : '深夜帯の勤務はありません';
-  }
+  $('monthlyAmount').innerHTML = amountHTML(payoutMonth);
 
-  // --- 2. 年収見込み ---
-  // 累計実績（先月分まで）＋ 今月の想定 × 今月を含む残り月数 ＋ 他店分
-  const projectedHere = monthlyPay * MONTHS_LEFT;
-  const yearlyTotal   = ytd.value + projectedHere + other.value;
+  const rowsBox = $('monthlyRows');
+  rowsBox.innerHTML = '';
+  const addRow = (label, value) => {
+    const d = document.createElement('div');
+    const a = document.createElement('span');
+    const b = document.createElement('span');
+    a.textContent = label;
+    b.textContent = value;
+    d.append(a, b);
+    rowsBox.appendChild(d);
+  };
+  addRow('基本給（想定）', yen(baseTotal));
+  addRow('深夜割増（想定）', yen(nightTotal));
+  addRow('通勤手当（想定）', yen(commuteMonth));
 
-  $('yearlyAmount').innerHTML = amountHTML(yearlyTotal);
-  $('yearlyDetail').textContent =
-    `累計実績 ${yen(ytd.value)} ＋ 今月の想定 ${yen(monthlyPay)} × ` +
-    `残り${MONTHS_LEFT}ヶ月（${CURRENT_MONTH}月〜12月）＝${yen(projectedHere)}` +
-    (other.filled ? ` ＋ 他店 ${yen(other.value)}` : ' ／ 他店分は未入力のため0円として計算') +
-    '（すべて想定）';
+  const holdTotal  = rows.reduce((s, r) => s + r.total, 0);
+  const breakTotal = rows.reduce((s, r) => s + r.brk, 0);
+  const workTotal  = rows.reduce((s, r) => s + r.work, 0);
 
-  // --- 3. 壁ごとの残りと到達時期 ---
+  $('monthlyDetail').textContent = shiftCount === 0
+    ? '勤務予定が未入力です'
+    : `${shiftCount}回 ／ 拘束 ${hoursText(holdTotal)} − 休憩 ${hoursText(breakTotal)}`
+      + ` ＝ 実働 ${hoursText(workTotal)}`
+      + (wage > 0 ? ` ／ 時給 ${yen(wage)}` : '　※有効な時給が未入力です');
+
+  // --- 2. 税務上の年収見込み（通勤手当を含まない） ---
+  const taxYear = ytdIncome.value + wageMonth * MONTHS_LEFT + other.value;
+
+  $('taxYearAmount').innerHTML = amountHTML(taxYear);
+  $('taxYearDetail').textContent =
+    `累計実績 ${yen(ytdIncome.value)} ＋ 今月の賃金 ${yen(wageMonth)} × `
+    + `残り${MONTHS_LEFT}ヶ月（${CURRENT_MONTH}月〜12月）`
+    + (other.filled ? ` ＋ 他店 ${yen(other.value)}` : ' ／ 他店分は未入力のため0円として計算')
+    + '（すべて想定）';
+
+  // --- 3. 社保上の年収見込み（通勤手当を含む） ---
+  const futureShifts = shiftCount * MONTHS_LEFT;          // 今後の想定勤務回数
+  const commuteYear  = ytdCommute.value + commuteEach.value * futureShifts;
+  const socialYear   = taxYear + commuteYear;
+
+  $('socialYearAmount').innerHTML = amountHTML(socialYear);
+  $('socialYearDetail').textContent =
+    `税務上の年収 ${yen(taxYear)} ＋ 通勤手当の累計 ${yen(ytdCommute.value)} ＋ `
+    + `1回あたり ${yen(commuteEach.value)} × 今後の想定勤務回数 ${futureShifts}回`
+    + `（${shiftCount}回 × ${MONTHS_LEFT}ヶ月）＝ 通勤手当 ${yen(commuteYear)}（すべて想定）`;
+
+  // --- 4. 壁ごとの残りと到達時期 ---
   renderWalls({
     age,
-    isStudent,
-    baseline: ytd.value + other.value,   // 到達時期の計算に使う「現時点の確定分」
-    yearlyTotal,
-    monthlyPay,
+    taxYear,
+    socialYear,
+    // 到達時期の起点になる「現時点までの確定分」と、1ヶ月あたりのペース
+    taxBaseline:    ytdIncome.value + other.value,
+    socialBaseline: ytdIncome.value + other.value + ytdCommute.value,
+    taxPace:        wageMonth,
+    socialPace:     wageMonth + commuteMonth,
   });
+
+  renderSocialInsurance(weeklyHours, isStudent);
 }
 
-/* --- 年齢と学生区分から、適用する壁の一覧を組み立てる --- */
-function selectWalls(age, isStudent) {
+/* --- 年齢から、表示する壁の一覧を組み立てる --- */
+function selectWalls(age) {
   const is19to22 =
     age !== null &&
     Number.isFinite(age) &&
     age >= WALL_SETTINGS.specialAgeMin &&
     age <= WALL_SETTINGS.specialAgeMax;
 
-  const walls = WALL_SETTINGS.wallsGeneral
-    .filter((w) => !(is19to22 && w.skipIf19to22))
-    .concat(is19to22 ? WALL_SETTINGS.walls19to22 : [])
-    .filter((w) => !(isStudent && w.skipIfStudent))
-    .filter((w) => typeof w.amount === 'number' && w.amount > 0);
+  const walls = WALL_SETTINGS.walls.filter((w) => {
+    if (typeof w.amount !== 'number' || w.amount <= 0) return false;
+    if (w.ages === '19to22') return is19to22;
+    if (w.ages === 'other')  return !is19to22;
+    return true;
+  });
 
   return { walls, is19to22 };
 }
 
 /* --- 壁の一覧を描画する --- */
-function renderWalls({ age, isStudent, baseline, yearlyTotal, monthlyPay }) {
-  const { walls, is19to22 } = selectWalls(age, isStudent);
+function renderWalls(ctx) {
+  const { walls, is19to22 } = selectWalls(ctx.age);
   const min = WALL_SETTINGS.specialAgeMin;
   const max = WALL_SETTINGS.specialAgeMax;
 
-  const labels = [];
-  if (age === null) {
-    labels.push(`年齢が未入力のため、${min}〜${max}歳以外の壁で表示しています`);
-  } else if (is19to22) {
-    labels.push(`適用中：${min}〜${max}歳の壁`);
-  } else {
-    labels.push(`適用中：${min}〜${max}歳以外の壁`);
-  }
-  if (isStudent) {
-    labels.push('昼間学生のため、勤務先の社会保険の加入要件（週20時間など）の対象外です。'
-              + 'ただし130万円の壁は学生にも適用されます');
-  }
-  $('wallSetLabel').textContent = labels.join('。');
+  $('wallSetLabel').textContent =
+    ctx.age === null
+      ? `年齢が未入力のため、${min}〜${max}歳以外の壁で表示しています`
+      : is19to22
+        ? `適用中：${min}〜${max}歳の壁`
+        : `適用中：${min}〜${max}歳以外の壁`;
 
   const list = $('wallList');
   list.innerHTML = '';
@@ -784,21 +968,24 @@ function renderWalls({ age, isStudent, baseline, yearlyTotal, monthlyPay }) {
     .slice()
     .sort((a, b) => a.amount - b.amount)
     .forEach((wall) => {
-      // 壁までの残り＝年末時点でどれだけ余るか
-      const diff = wall.amount - yearlyTotal;
+      const isSocial = wall.basis === 'social';
+      const yearly   = isSocial ? ctx.socialYear     : ctx.taxYear;
+      const baseline = isSocial ? ctx.socialBaseline : ctx.taxBaseline;
+      const pace     = isSocial ? ctx.socialPace     : ctx.taxPace;
 
-      // 到達時期＝現時点の確定分から、今月のペースで何ヶ月かかるか
-      const remainFromNow = wall.amount - baseline;
-      let months = null;                       // null は算出不能
+      const diff = wall.amount - yearly;              // 年末時点でどれだけ余るか
+      const remainFromNow = wall.amount - baseline;   // 現時点からの残り
+
+      let months = null;                              // null は算出不能
       if (remainFromNow <= 0) months = 0;
-      else if (monthlyPay > 0) months = remainFromNow / monthlyPay;
+      else if (pace > 0) months = remainFromNow / pace;
 
       // 状態は上から順に判定する。
-      // 「あと何ヶ月で到達するか」の警告を、年末時点の超過見込みより優先する。
+      // 「あと何ヶ月で到達するか」を年末時点の超過見込みより優先する。
       // そうしないと、1ヶ月後に届く壁より3ヶ月後に届く壁のほうが強く見えてしまう。
-      const reached  = remainFromNow <= 0;     // 今月分を数えなくても既に到達
+      const reached  = remainFromNow <= 0;
       const near     = !reached && months !== null && months <= WALL_SETTINGS.warnMonths;
-      const willPass = !reached && !near && diff < 0;   // 年末までに超える見込み
+      const willPass = !reached && !near && diff < 0;
 
       const box = document.createElement('div');
       box.className = 'wall' + (near ? ' near' : (reached || willPass) ? ' over' : '');
@@ -812,27 +999,27 @@ function renderWalls({ age, isStudent, baseline, yearlyTotal, monthlyPay }) {
       };
 
       add('wall-name', wall.name);
-      add('wall-amount', `基準額：${yen(wall.amount)}`);
+      add('wall-amount',
+          `基準額：${yen(wall.amount)} ／ 判定に使う年収：`
+          + (isSocial ? '社保上（通勤手当を含む）' : '税務上（通勤手当を含まない）'));
 
       // 文言は状態フラグではなく差額の符号で決める（マイナスの「残り」を出さないため）
       add('wall-diff', diff < 0
         ? `年収見込みとの差（想定）：${yen(Math.abs(diff))}の超過`
         : `壁までの残り（想定）：${yen(diff)}`);
 
-      // --- 到達時期 ---
       let eta;
       if (reached) {
-        eta = '到達時期：累計実績と他店分だけで、すでに到達している見込みです';
+        eta = '到達時期：現時点までの確定分だけで、すでに到達している見込みです';
       } else if (months === null) {
-        eta = '到達時期：今月の想定給与が0円のため算出できません';
+        eta = '到達時期：今月のペースが0円のため算出できません';
       } else {
         const m = Math.round(months * 10) / 10;
-        eta = `到達時期：今のペース（月 ${yen(monthlyPay)}）で、あと約${m.toLocaleString('ja-JP')}ヶ月`;
+        eta = `到達時期：今のペース（月 ${yen(pace)}）で、あと約${m.toLocaleString('ja-JP')}ヶ月`;
         if (months > MONTHS_LEFT) eta += '（年内には到達しない見込み）';
       }
       add('wall-eta', eta);
 
-      // --- 警告文（断定しない） ---
       let message = '';
       if (reached) {
         message = 'すでに到達している見込みです。詳細は確認してください。';
@@ -843,21 +1030,74 @@ function renderWalls({ age, isStudent, baseline, yearlyTotal, monthlyPay }) {
       }
       add('wall-msg', message);
 
-      // --- 超えると何が変わるか ---
       if (wall.effect) add('wall-effect', `超えると何が変わるか：${wall.effect}`);
 
       list.appendChild(box);
     });
 }
 
-/* --- 初期化 --- */
+/* --- 社会保険の加入要件（金額ではなく週の所定労働時間で判定） --- */
+function renderSocialInsurance(weeklyHours, isStudent) {
+  const box = $('siBox');
+  const short3q = SOCIAL_INSURANCE.weeklyHoursThreeQuarters;
+  const short20 = SOCIAL_INSURANCE.weeklyHoursShortTime;
+  const h = weeklyHours.value;
+
+  const msgs = [];
+  let alert = false;
+
+  if (!weeklyHours.filled) {
+    msgs.push('週の所定労働時間が未入力のため、加入要件を判定していません。');
+  } else {
+    // 4分の3基準は学生かどうかを問わない。
+    // 昼間学生の除外は週20時間の特例の話であり、こちらには適用されない。
+    if (h >= short3q) {
+      alert = true;
+      msgs.push(`週の所定労働時間が${short3q}時間以上です。`
+              + '4分の3基準により社会保険の加入対象になる可能性があります。'
+              + 'この基準は昼間学生であっても適用されます。');
+    }
+    if (h >= short20 && !isStudent) {
+      alert = true;
+      msgs.push(`週の所定労働時間が${short20}時間以上です。`
+              + '社会保険の加入対象になる可能性があります。');
+    }
+    if (h >= short20 && h < short3q && isStudent) {
+      msgs.push(`昼間学生のため、週${short20}時間の要件（特例）の対象外です。`
+              + `ただし週${short3q}時間以上になると、4分の3基準が適用されます。`);
+    }
+    if (h < short20) {
+      msgs.push(`週の所定労働時間が${short20}時間未満のため、`
+              + '労働時間からは加入要件に該当する見込みはありません。');
+    }
+  }
+
+  msgs.push('加入するかどうかは勤務先の判断です。詳細は確認してください。');
+
+  box.className = 'si' + (alert ? ' alert' : '');
+  box.innerHTML = '';
+  const h3 = document.createElement('h3');
+  h3.textContent = '社会保険の加入要件（労働時間による判定）';
+  box.appendChild(h3);
+  msgs.forEach((m) => {
+    const p = document.createElement('p');
+    p.textContent = m;
+    box.appendChild(p);
+  });
+}
+
+/* ------------------------------------------------------------------
+   初期化
+   ------------------------------------------------------------------ */
+
 addShiftBtn.addEventListener('click', () => {
   const row = addShiftRow();
   row.querySelector('.in-date').focus();
   recalc();
 });
 
-['employeeName', 'hourlyWage', 'age', 'ytdIncome', 'otherIncome'].forEach((id) => {
+['employeeName', 'hourlyWage', 'age', 'weeklyHours',
+ 'ytdIncome', 'ytdCommute', 'commutePerShift', 'otherIncome'].forEach((id) => {
   $(id).addEventListener('input', recalc);
 });
 $('isStudent').addEventListener('change', recalc);
